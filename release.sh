@@ -2,23 +2,18 @@
 set -euo pipefail
 
 # -----------------------------------------------------------
-# release.sh — Create a release commit for native_datastore
+# release.sh — Release and publish native_datastore to pub.dev
 #
 # Usage:
 #   ./release.sh 1.0.0
-#   ./release.sh 1.2.3
 #
 # What it does:
 #   1. Validates the version format (x.y.z)
-#   2. Updates pubspec.yaml with the new version
-#   3. Updates CHANGELOG.md with a new entry
-#   4. Runs flutter analyze and flutter test
-#   5. Creates a commit: "RELEASE 1.0.0"
-#   6. Runs flutter pub publish --dry-run (rolls back on failure)
-#   7. Creates a git tag: v1.0.0
-#
-# Push to trigger the publish workflow:
-#   git push && git push --tags
+#   2. Updates pubspec.yaml and CHANGELOG.md
+#   3. Runs flutter analyze and flutter test
+#   4. Creates a commit: "RELEASE x.y.z" and tag: vx.y.z
+#   5. Publishes to pub.dev
+#   6. Pushes commit and tag to origin
 # -----------------------------------------------------------
 
 RED='\033[0;31m'
@@ -99,26 +94,38 @@ flutter analyze
 info "Running flutter test..."
 flutter test
 
-# ---- Commit first (so dry-run sees a clean tree) ----
+# ---- Commit (so dry-run sees a clean tree) ----
 info "Creating release commit..."
-git add pubspec.yaml CHANGELOG.md pubspec.lock
+git add pubspec.yaml CHANGELOG.md
 git commit -m "RELEASE $VERSION"
 
-# ---- Dry run publish (roll back commit on failure) ----
+# ---- Dry run publish ----
 info "Running publish dry run..."
 if ! flutter pub publish --dry-run; then
   warn "Dry run failed. Rolling back release commit..."
   git reset --soft HEAD~1
-  git restore --staged pubspec.yaml CHANGELOG.md pubspec.lock
+  git restore --staged pubspec.yaml CHANGELOG.md
   git checkout -- pubspec.yaml CHANGELOG.md
   error "Publish dry run failed. Commit has been rolled back."
 fi
 
-# ---- Tag ----
+# ---- Publish to pub.dev ----
+info "Publishing to pub.dev..."
+if ! flutter pub publish --force; then
+  warn "Publish failed. Rolling back release commit..."
+  git reset --soft HEAD~1
+  git restore --staged pubspec.yaml CHANGELOG.md
+  git checkout -- pubspec.yaml CHANGELOG.md
+  error "Publish to pub.dev failed. Commit has been rolled back."
+fi
+
+# ---- Tag and push ----
 git tag "v$VERSION"
 
+info "Pushing to origin..."
+git push
+git push --tags
+
 info ""
-info "Release $VERSION is ready!"
-info ""
-info "To publish, run:"
-info "  git push && git push --tags"
+info "Released $VERSION to pub.dev!"
+info "  https://pub.dev/packages/native_datastore"
