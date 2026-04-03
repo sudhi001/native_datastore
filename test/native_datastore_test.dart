@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:native_datastore/native_datastore.dart';
@@ -80,9 +78,7 @@ void main() {
     datastore = NativeDatastore();
   });
 
-  tearDown(() {
-    MockDatastoreChannel.reset();
-  });
+  tearDown(MockDatastoreChannel.reset);
 
   // -------------------------------------------------------
   // NativeDatastoreException
@@ -524,9 +520,8 @@ Future<NativeDatastoreException> _expectException(
     Future<Object?> Function() fn) async {
   try {
     await fn();
-    fail('Expected NativeDatastoreException to be thrown');
   } on NativeDatastoreException catch (e) {
     return e;
   }
-  throw StateError('unreachable');
+  fail('Expected NativeDatastoreException to be thrown');
 }

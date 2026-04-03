@@ -1,3 +1,7 @@
+## 1.0.0
+
+* Released on 2026-04-03.
+
 ## 0.0.1
 
 * Initial release with support for Android (Jetpack DataStore) and iOS (UserDefaults).

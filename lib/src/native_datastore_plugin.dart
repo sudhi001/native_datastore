@@ -62,7 +62,7 @@ class NativeDatastore {
   /// Validates that [key] is a non-empty string.
   static void _validateKey(String key) {
     if (key.isEmpty) {
-      throw NativeDatastoreException(
+      throw const NativeDatastoreException(
         'Key must not be empty',
       );
     }
@@ -213,7 +213,7 @@ class NativeDatastore {
   ///
   /// Throws [NativeDatastoreException] if the platform call fails.
   Future<bool> clear() {
-    return _guard('clear', () => _api.clear());
+    return _guard('clear', _api.clear);
   }
 
   /// Returns all key-value pairs currently stored in the data store.
@@ -224,14 +224,14 @@ class NativeDatastore {
   ///
   /// Throws [NativeDatastoreException] if the platform call fails.
   Future<Map<String, Object>> getAll() {
-    return _guard('getAll', () => _api.getAll());
+    return _guard('getAll', _api.getAll);
   }
 
   /// Returns a list of all keys currently stored in the data store.
   ///
   /// Throws [NativeDatastoreException] if the platform call fails.
   Future<List<String>> getKeys() {
-    return _guard('getKeys', () => _api.getKeys());
+    return _guard('getKeys', _api.getKeys);
   }
 
   /// Returns `true` if the data store contains the given [key].
