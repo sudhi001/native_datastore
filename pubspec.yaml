@@ -1,0 +1,39 @@
+name: native_datastore
+description: >-
+  A modern Flutter plugin for persistent key-value storage.
+  Uses Android Jetpack DataStore on Android and UserDefaults on iOS.
+  A type-safe, async-first alternative to shared_preferences.
+version: 0.0.1
+homepage: https://sudhi.in
+repository: https://github.com/anthropics/native_datastore
+issue_tracker: https://github.com/anthropics/native_datastore/issues
+topics:
+  - storage
+  - datastore
+  - preferences
+  - persistence
+  - keyvalue
+
+environment:
+  sdk: ^3.11.4
+  flutter: '>=3.3.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  meta: ^1.17.0
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+  pigeon: ^26.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: in.sudhi.native_datastore
+        pluginClass: NativeDatastorePlugin
+      ios:
+        pluginClass: NativeDatastorePlugin
