@@ -14,7 +14,8 @@ set -euo pipefail
 #   3. Updates CHANGELOG.md with a new entry
 #   4. Runs flutter analyze and flutter test
 #   5. Creates a commit: "RELEASE 1.0.0"
-#   6. Creates a git tag: v1.0.0
+#   6. Runs flutter pub publish --dry-run (rolls back on failure)
+#   7. Creates a git tag: v1.0.0
 #
 # Push to trigger the publish workflow:
 #   git push && git push --tags
@@ -79,7 +80,6 @@ DATE=$(date +%Y-%m-%d)
 CHANGELOG_ENTRY="## $VERSION\n\n* Released on $DATE.\n"
 
 if [ -f CHANGELOG.md ]; then
-  # Insert new entry at the top of the file
   {
     echo -e "$CHANGELOG_ENTRY"
     cat CHANGELOG.md
@@ -99,14 +99,22 @@ flutter analyze
 info "Running flutter test..."
 flutter test
 
-# ---- Dry run publish ----
-info "Running publish dry run..."
-flutter pub publish --dry-run
-
-# ---- Commit & tag ----
+# ---- Commit first (so dry-run sees a clean tree) ----
 info "Creating release commit..."
 git add pubspec.yaml CHANGELOG.md pubspec.lock
 git commit -m "RELEASE $VERSION"
+
+# ---- Dry run publish (roll back commit on failure) ----
+info "Running publish dry run..."
+if ! flutter pub publish --dry-run; then
+  warn "Dry run failed. Rolling back release commit..."
+  git reset --soft HEAD~1
+  git restore --staged pubspec.yaml CHANGELOG.md pubspec.lock
+  git checkout -- pubspec.yaml CHANGELOG.md
+  error "Publish dry run failed. Commit has been rolled back."
+fi
+
+# ---- Tag ----
 git tag "v$VERSION"
 
 info ""
