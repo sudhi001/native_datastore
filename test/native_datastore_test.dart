@@ -456,7 +456,6 @@ void main() {
       expect(await ds.getString('k'), 'injected');
     });
   });
-}
 
   // -------------------------------------------------------
   // Generated code edge cases (messages.g.dart coverage)
