@@ -4,9 +4,12 @@ description: >-
   Uses Android Jetpack DataStore on Android and UserDefaults on iOS.
   A type-safe, async-first alternative to shared_preferences.
 version: 0.0.1
+authors:
+  - Sudhi S <mail@sudhi.in>
 homepage: https://sudhi.in
-repository: https://github.com/anthropics/native_datastore
-issue_tracker: https://github.com/anthropics/native_datastore/issues
+repository: https://github.com/sudhi001/native_datastore
+issue_tracker: https://github.com/sudhi001/native_datastore/issues
+documentation: https://github.com/sudhi001/native_datastore#readme
 topics:
   - storage
   - datastore
