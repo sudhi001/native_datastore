@@ -2,7 +2,7 @@
 // See also: https://pub.dev/packages/pigeon
 @file:Suppress("UNCHECKED_CAST", "ArrayInDataClass")
 
-package in.sudhi.native_datastore
+package `in`.sudhi.native_datastore
 
 import android.util.Log
 import io.flutter.plugin.common.BasicMessageChannel
@@ -74,6 +74,12 @@ interface DatastoreApi {
   fun getAll(callback: (Result<Map<String, Any>>) -> Unit)
   fun getKeys(callback: (Result<List<String>>) -> Unit)
   fun containsKey(key: String, callback: (Result<Boolean>) -> Unit)
+  fun getBytes(key: String, callback: (Result<ByteArray?>) -> Unit)
+  fun setBytes(key: String, value: ByteArray, callback: (Result<Unit>) -> Unit)
+  fun getDateTimeMillis(key: String, callback: (Result<Long?>) -> Unit)
+  fun setDateTimeMillis(key: String, value: Long, callback: (Result<Unit>) -> Unit)
+  fun getJsonMap(key: String, callback: (Result<String?>) -> Unit)
+  fun setJsonMap(key: String, value: String, callback: (Result<Unit>) -> Unit)
 
   companion object {
     /** The codec used by DatastoreApi. */
@@ -371,6 +377,126 @@ interface DatastoreApi {
               } else {
                 val data = result.getOrNull()
                 reply.reply(MessagesPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.getBytes$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keyArg = args[0] as String
+            api.getBytes(keyArg) { result: Result<ByteArray?> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MessagesPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.setBytes$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keyArg = args[0] as String
+            val valueArg = args[1] as ByteArray
+            api.setBytes(keyArg, valueArg) { result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                reply.reply(MessagesPigeonUtils.wrapResult(null))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.getDateTimeMillis$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keyArg = args[0] as String
+            api.getDateTimeMillis(keyArg) { result: Result<Long?> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MessagesPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.setDateTimeMillis$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keyArg = args[0] as String
+            val valueArg = args[1] as Long
+            api.setDateTimeMillis(keyArg, valueArg) { result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                reply.reply(MessagesPigeonUtils.wrapResult(null))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.getJsonMap$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keyArg = args[0] as String
+            api.getJsonMap(keyArg) { result: Result<String?> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MessagesPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.setJsonMap$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keyArg = args[0] as String
+            val valueArg = args[1] as String
+            api.setJsonMap(keyArg, valueArg) { result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                reply.reply(MessagesPigeonUtils.wrapResult(null))
               }
             }
           }

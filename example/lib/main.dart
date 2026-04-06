@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:native_datastore/native_datastore.dart';
 
@@ -33,6 +36,18 @@ class _DataStoreDemoState extends State<DataStoreDemo> {
   final _keyController = TextEditingController();
   final _valueController = TextEditingController();
   String _output = 'No data yet';
+  String _selectedType = 'String';
+
+  final _types = [
+    'String',
+    'Bool',
+    'Int',
+    'Double',
+    'StringList',
+    'Bytes',
+    'DateTime',
+    'Map',
+  ];
 
   @override
   void dispose() {
@@ -41,20 +56,102 @@ class _DataStoreDemoState extends State<DataStoreDemo> {
     super.dispose();
   }
 
-  Future<void> _setString() async {
+  String get _valueHint {
+    switch (_selectedType) {
+      case 'Bool':
+        return 'true or false';
+      case 'Int':
+        return 'e.g. 42';
+      case 'Double':
+        return 'e.g. 3.14';
+      case 'StringList':
+        return 'comma-separated, e.g. a,b,c';
+      case 'Bytes':
+        return 'comma-separated bytes, e.g. 0,1,255';
+      case 'DateTime':
+        return 'ISO 8601, e.g. 2024-06-15T10:30:00Z';
+      case 'Map':
+        return 'JSON, e.g. {"name":"sudhi","age":30}';
+      default:
+        return 'Value';
+    }
+  }
+
+  Future<void> _setValue() async {
     final key = _keyController.text.trim();
-    final value = _valueController.text.trim();
-    if (key.isEmpty || value.isEmpty) return;
-    await _datastore.setString(key, value);
-    _showMessage('Saved "$key" = "$value"');
+    final raw = _valueController.text.trim();
+    if (key.isEmpty || raw.isEmpty) return;
+
+    try {
+      switch (_selectedType) {
+        case 'String':
+          await _datastore.setString(key, raw);
+          _showMessage('Saved String "$key" = "$raw"');
+        case 'Bool':
+          final val = raw.toLowerCase() == 'true';
+          await _datastore.setBool(key, val);
+          _showMessage('Saved Bool "$key" = $val');
+        case 'Int':
+          final val = int.parse(raw);
+          await _datastore.setInt(key, val);
+          _showMessage('Saved Int "$key" = $val');
+        case 'Double':
+          final val = double.parse(raw);
+          await _datastore.setDouble(key, val);
+          _showMessage('Saved Double "$key" = $val');
+        case 'StringList':
+          final val = raw.split(',').map((s) => s.trim()).toList();
+          await _datastore.setStringList(key, val);
+          _showMessage('Saved StringList "$key" = $val');
+        case 'Bytes':
+          final val = Uint8List.fromList(
+            raw.split(',').map((s) => int.parse(s.trim())).toList(),
+          );
+          await _datastore.setBytes(key, val);
+          _showMessage('Saved Bytes "$key" (${val.length} bytes)');
+        case 'DateTime':
+          final val = DateTime.parse(raw);
+          await _datastore.setDateTime(key, val);
+          _showMessage('Saved DateTime "$key" = ${val.toIso8601String()}');
+        case 'Map':
+          final val = Map<String, dynamic>.from(
+            jsonDecode(raw) as Map,
+          );
+          await _datastore.setMap(key, val);
+          _showMessage('Saved Map "$key"');
+      }
+    } on FormatException {
+      _showMessage('Invalid $_selectedType value: "$raw"');
+      return;
+    }
     await _loadAll();
   }
 
-  Future<void> _getString() async {
+  Future<void> _getValue() async {
     final key = _keyController.text.trim();
     if (key.isEmpty) return;
-    final value = await _datastore.getString(key);
-    _showMessage('$key = ${value ?? "(not found)"}');
+
+    Object? value;
+    switch (_selectedType) {
+      case 'String':
+        value = await _datastore.getString(key);
+      case 'Bool':
+        value = await _datastore.getBool(key);
+      case 'Int':
+        value = await _datastore.getInt(key);
+      case 'Double':
+        value = await _datastore.getDouble(key);
+      case 'StringList':
+        value = await _datastore.getStringList(key);
+      case 'Bytes':
+        value = await _datastore.getBytes(key);
+      case 'DateTime':
+        final dt = await _datastore.getDateTime(key);
+        value = dt?.toIso8601String();
+      case 'Map':
+        value = await _datastore.getMap(key);
+    }
+    _showMessage('$key ($_selectedType) = ${value ?? "(not found)"}');
   }
 
   Future<void> _remove() async {
@@ -62,6 +159,20 @@ class _DataStoreDemoState extends State<DataStoreDemo> {
     if (key.isEmpty) return;
     final removed = await _datastore.remove(key);
     _showMessage(removed ? 'Removed "$key"' : '"$key" not found');
+    await _loadAll();
+  }
+
+  Future<void> _setSampleData() async {
+    await _datastore.clear();
+    await _datastore.setString('username', 'sudhi');
+    await _datastore.setBool('darkMode', true);
+    await _datastore.setInt('loginCount', 42);
+    await _datastore.setDouble('rating', 4.8);
+    await _datastore.setStringList('tags', ['flutter', 'dart', 'mobile']);
+    await _datastore.setBytes('token', Uint8List.fromList([0x48, 0x65, 0x6C, 0x6C, 0x6F]));
+    await _datastore.setDateTime('lastLogin', DateTime.now());
+    await _datastore.setMap('profile', {'name': 'sudhi', 'level': 5, 'active': true});
+    _showMessage('Saved sample data for all 8 types');
     await _loadAll();
   }
 
@@ -77,7 +188,9 @@ class _DataStoreDemoState extends State<DataStoreDemo> {
       if (all.isEmpty) {
         _output = 'DataStore is empty';
       } else {
-        _output = all.entries.map((e) => '${e.key}: ${e.value}').join('\n');
+        _output = all.entries
+            .map((e) => '${e.key} (${e.value.runtimeType}): ${e.value}')
+            .join('\n');
       }
     });
   }
@@ -105,12 +218,27 @@ class _DataStoreDemoState extends State<DataStoreDemo> {
               ),
             ),
             const SizedBox(height: 8),
-            TextField(
-              controller: _valueController,
-              decoration: const InputDecoration(
-                labelText: 'Value',
-                border: OutlineInputBorder(),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _valueController,
+                    decoration: InputDecoration(
+                      labelText: 'Value',
+                      hintText: _valueHint,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                DropdownButton<String>(
+                  value: _selectedType,
+                  items: _types
+                      .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _selectedType = v!),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             Wrap(
@@ -118,12 +246,12 @@ class _DataStoreDemoState extends State<DataStoreDemo> {
               runSpacing: 8,
               children: [
                 FilledButton(
-                  onPressed: _setString,
-                  child: const Text('Set String'),
+                  onPressed: _setValue,
+                  child: Text('Set $_selectedType'),
                 ),
                 OutlinedButton(
-                  onPressed: _getString,
-                  child: const Text('Get String'),
+                  onPressed: _getValue,
+                  child: Text('Get $_selectedType'),
                 ),
                 OutlinedButton(
                   onPressed: _loadAll,
@@ -136,6 +264,10 @@ class _DataStoreDemoState extends State<DataStoreDemo> {
                 FilledButton.tonal(
                   onPressed: _clearAll,
                   child: const Text('Clear All'),
+                ),
+                FilledButton(
+                  onPressed: _setSampleData,
+                  child: const Text('Set All Types'),
                 ),
               ],
             ),

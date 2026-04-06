@@ -63,4 +63,22 @@ abstract class DatastoreApi {
 
   @async
   bool containsKey(String key);
+
+  @async
+  Uint8List? getBytes(String key);
+
+  @async
+  void setBytes(String key, Uint8List value);
+
+  @async
+  int? getDateTimeMillis(String key);
+
+  @async
+  void setDateTimeMillis(String key, int value);
+
+  @async
+  String? getJsonMap(String key);
+
+  @async
+  void setJsonMap(String key, String value);
 }
