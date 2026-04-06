@@ -3,7 +3,7 @@ description: >-
   A modern Flutter plugin for persistent key-value storage.
   Uses Android Jetpack DataStore on Android and UserDefaults on iOS.
   A type-safe, async-first alternative to shared_preferences.
-version: 1.1.1
+version: 1.1.2
 homepage: https://sudhi.in
 repository: https://github.com/sudhi001/native_datastore
 issue_tracker: https://github.com/sudhi001/native_datastore/issues
