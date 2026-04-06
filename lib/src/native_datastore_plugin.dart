@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -241,5 +242,91 @@ class NativeDatastore {
   Future<bool> containsKey(String key) {
     _validateKey(key);
     return _guard('containsKey("$key")', () => _api.containsKey(key));
+  }
+
+  /// Reads a [Uint8List] (binary data) from the data store for the given [key].
+  ///
+  /// Returns `null` if the [key] does not exist.
+  ///
+  /// Throws [NativeDatastoreException] if the [key] is empty or
+  /// the platform call fails.
+  Future<Uint8List?> getBytes(String key) {
+    _validateKey(key);
+    return _guard('getBytes("$key")', () => _api.getBytes(key));
+  }
+
+  /// Writes a [Uint8List] (binary data) to the data store for the given [key].
+  ///
+  /// If the [key] already exists, its value is overwritten.
+  ///
+  /// Throws [NativeDatastoreException] if the [key] is empty or
+  /// the platform call fails.
+  Future<void> setBytes(String key, Uint8List value) {
+    _validateKey(key);
+    return _guard('setBytes("$key")', () => _api.setBytes(key, value));
+  }
+
+  /// Reads a [DateTime] from the data store for the given [key].
+  ///
+  /// The value is stored as milliseconds since epoch (UTC).
+  /// Returns `null` if the [key] does not exist.
+  ///
+  /// Throws [NativeDatastoreException] if the [key] is empty or
+  /// the platform call fails.
+  Future<DateTime?> getDateTime(String key) {
+    _validateKey(key);
+    return _guard('getDateTime("$key")', () async {
+      final millis = await _api.getDateTimeMillis(key);
+      return millis != null
+          ? DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true)
+          : null;
+    });
+  }
+
+  /// Writes a [DateTime] to the data store for the given [key].
+  ///
+  /// The value is stored as milliseconds since epoch (UTC).
+  /// If the [key] already exists, its value is overwritten.
+  ///
+  /// Throws [NativeDatastoreException] if the [key] is empty or
+  /// the platform call fails.
+  Future<void> setDateTime(String key, DateTime value) {
+    _validateKey(key);
+    return _guard(
+      'setDateTime("$key")',
+      () => _api.setDateTimeMillis(key, value.toUtc().millisecondsSinceEpoch),
+    );
+  }
+
+  /// Reads a [Map] from the data store for the given [key].
+  ///
+  /// The value is stored as a JSON string internally.
+  /// Returns `null` if the [key] does not exist.
+  ///
+  /// Throws [NativeDatastoreException] if the [key] is empty or
+  /// the platform call fails.
+  Future<Map<String, dynamic>?> getMap(String key) {
+    _validateKey(key);
+    return _guard('getMap("$key")', () async {
+      final json = await _api.getJsonMap(key);
+      return json != null
+          ? (jsonDecode(json) as Map<String, dynamic>)
+          : null;
+    });
+  }
+
+  /// Writes a [Map] to the data store for the given [key].
+  ///
+  /// The value is stored as a JSON string internally.
+  /// If the [key] already exists, its value is overwritten.
+  ///
+  /// Throws [NativeDatastoreException] if the [key] is empty or
+  /// the platform call fails.
+  Future<void> setMap(String key, Map<String, dynamic> value) {
+    _validateKey(key);
+    return _guard(
+      'setMap("$key")',
+      () => _api.setJsonMap(key, jsonEncode(value)),
+    );
   }
 }

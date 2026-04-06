@@ -103,6 +103,12 @@ protocol DatastoreApi {
   func getAll(completion: @escaping (Result<[String: Any], Error>) -> Void)
   func getKeys(completion: @escaping (Result<[String], Error>) -> Void)
   func containsKey(key: String, completion: @escaping (Result<Bool, Error>) -> Void)
+  func getBytes(key: String, completion: @escaping (Result<FlutterStandardTypedData?, Error>) -> Void)
+  func setBytes(key: String, value: FlutterStandardTypedData, completion: @escaping (Result<Void, Error>) -> Void)
+  func getDateTimeMillis(key: String, completion: @escaping (Result<Int64?, Error>) -> Void)
+  func setDateTimeMillis(key: String, value: Int64, completion: @escaping (Result<Void, Error>) -> Void)
+  func getJsonMap(key: String, completion: @escaping (Result<String?, Error>) -> Void)
+  func setJsonMap(key: String, value: String, completion: @escaping (Result<Void, Error>) -> Void)
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -364,6 +370,111 @@ class DatastoreApiSetup {
       }
     } else {
       containsKeyChannel.setMessageHandler(nil)
+    }
+    let getBytesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.getBytes\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      getBytesChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        api.getBytes(key: keyArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      getBytesChannel.setMessageHandler(nil)
+    }
+    let setBytesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.setBytes\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setBytesChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        let valueArg = args[1] as! FlutterStandardTypedData
+        api.setBytes(key: keyArg, value: valueArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      setBytesChannel.setMessageHandler(nil)
+    }
+    let getDateTimeMillisChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.getDateTimeMillis\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      getDateTimeMillisChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        api.getDateTimeMillis(key: keyArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      getDateTimeMillisChannel.setMessageHandler(nil)
+    }
+    let setDateTimeMillisChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.setDateTimeMillis\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setDateTimeMillisChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        let valueArg = args[1] as! Int64
+        api.setDateTimeMillis(key: keyArg, value: valueArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      setDateTimeMillisChannel.setMessageHandler(nil)
+    }
+    let getJsonMapChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.getJsonMap\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      getJsonMapChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        api.getJsonMap(key: keyArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      getJsonMapChannel.setMessageHandler(nil)
+    }
+    let setJsonMapChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.setJsonMap\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setJsonMapChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        let valueArg = args[1] as! String
+        api.setJsonMap(key: keyArg, value: valueArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      setJsonMapChannel.setMessageHandler(nil)
     }
   }
 }
