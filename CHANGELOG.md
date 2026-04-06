@@ -1,5 +1,9 @@
 ## 1.1.0
 
+* Released on 2026-04-06.
+
+## 1.1.0
+
 * Added 3 new data types:
   - `Uint8List` -- binary data via `getBytes()` / `setBytes()` (Base64 on Android, native Data on iOS).
   - `DateTime` -- date/time via `getDateTime()` / `setDateTime()` (stored as UTC milliseconds since epoch).
