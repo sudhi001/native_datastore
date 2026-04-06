@@ -282,6 +282,24 @@ final value = await datastore.getString('key');
 
 ---
 
+## Library Size
+
+The library is lightweight with a minimal footprint:
+
+| Layer | Hand-written | Generated (Pigeon) | Total |
+|-------|-------------|-------------------|-------|
+| Dart | 358 lines | 463 lines | 821 lines |
+| Kotlin (Android) | 301 lines | 509 lines | 810 lines |
+| Swift (iOS) | 277 lines | 480 lines | 757 lines |
+| **Total** | **936 lines** | **1,452 lines** | **2,388 lines** |
+
+- ~61% is auto-generated [Pigeon](https://pub.dev/packages/pigeon) code (message channel boilerplate)
+- ~39% is hand-written plugin logic (~300 lines per platform)
+- Total source size: **~87 KB** across 7 files
+- No external dependencies beyond Flutter SDK and platform-native APIs
+
+---
+
 ## Requirements
 
 | Dependency | Minimum Version |
