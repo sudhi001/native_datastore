@@ -1,3 +1,5 @@
+## 1.3.1
+  - Nothing special just a build automation with Github actions
 ## 1.3.0
 
 * **New: `SecureDatastore` for encrypted-at-rest storage.** A separate class
@@ -39,7 +41,7 @@
   - Renamed for clarity: Swift `prefix` → `keyNamespace`, `queue` → `serialQueue`; Kotlin
     `launchSafe` → `launchOnAttached`.
   - Repeated dartdoc on typed getters/setters consolidated via `{@template}`/`{@macro}`.
-  - Github actions
+
 
 ## 1.2.0
 
