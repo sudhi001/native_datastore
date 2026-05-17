@@ -1,0 +1,104 @@
+name: Release
+
+# Manual trigger only — run from the Actions tab when you're ready to ship.
+# The workflow reads the version from pubspec.yaml; bump it there before
+# running.
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Static analysis
+        run: flutter analyze
+
+      - name: Unit tests
+        run: flutter test
+
+  publish:
+    name: Publish and tag
+    needs: test
+    runs-on: ubuntu-latest
+    # `id-token: write` lets `dart pub publish` exchange a GitHub OIDC token
+    # for a pub.dev publish credential — no API key in the repo. Requires
+    # automated publishing to be configured for this repo on pub.dev.
+    # `contents: write` lets the workflow push the tag and create the release.
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so `git rev-parse refs/tags/...` works against any
+          # prior tag.
+          fetch-depth: 0
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Read version from pubspec.yaml
+        id: pubspec
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | tr -d '[:space:]')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read version from pubspec.yaml"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing $VERSION (tag v$VERSION)"
+
+      - name: Verify tag does not already exist
+        env:
+          TAG: ${{ steps.pubspec.outputs.tag }}
+        run: |
+          if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists. Bump the version in pubspec.yaml."
+            exit 1
+          fi
+
+      - name: Validate package (dry-run)
+        run: dart pub publish --dry-run
+
+      - name: Publish to pub.dev
+        # OIDC: pub.dev sees the GitHub-issued token and authorizes the
+        # upload without a stored API key. Configure trust on pub.dev under
+        # the package admin → automated publishing.
+        run: dart pub publish --force
+
+      - name: Create and push tag
+        env:
+          TAG: ${{ steps.pubspec.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub Release
+        env:
+          TAG: ${{ steps.pubspec.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes
