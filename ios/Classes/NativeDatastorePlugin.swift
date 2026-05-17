@@ -46,36 +46,69 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
         }
     }
 
+    /// Returns true if `value` was stored as a Bool (CFBoolean), not a numeric.
+    /// `defaults.set(true, forKey:)` stores a CFBoolean, distinguishable from
+    /// an NSNumber via CFGetTypeID.
+    private func isStoredAsBool(_ value: Any) -> Bool {
+        return CFGetTypeID(value as CFTypeRef) == CFBooleanGetTypeID()
+    }
+
+    /// Returns true if `num` was stored as a floating-point value.
+    /// NSNumber's objCType is "f" for Float and "d" for Double.
+    private func isFloatingPointNumber(_ num: NSNumber) -> Bool {
+        let kind = String(cString: num.objCType)
+        return kind == "f" || kind == "d"
+    }
+
     func getBool(key: String, completion: @escaping (Result<Bool?, Error>) -> Void) {
         queue.async { [self] in
-            let pKey = prefixedKey(key)
-            if defaults.object(forKey: pKey) == nil {
+            guard let value = defaults.object(forKey: prefixedKey(key)) else {
                 completion(.success(nil))
-            } else {
-                completion(.success(defaults.bool(forKey: pKey)))
+                return
             }
+            guard isStoredAsBool(value) else {
+                completion(.success(nil))
+                return
+            }
+            completion(.success((value as! NSNumber).boolValue))
         }
     }
 
     func getInt(key: String, completion: @escaping (Result<Int64?, Error>) -> Void) {
         queue.async { [self] in
-            let pKey = prefixedKey(key)
-            if defaults.object(forKey: pKey) == nil {
+            guard let value = defaults.object(forKey: prefixedKey(key)) else {
                 completion(.success(nil))
-            } else {
-                completion(.success(Int64(defaults.integer(forKey: pKey))))
+                return
             }
+            // Reject values that were stored as Bool or floating-point.
+            if isStoredAsBool(value) {
+                completion(.success(nil))
+                return
+            }
+            guard let num = value as? NSNumber, !isFloatingPointNumber(num) else {
+                completion(.success(nil))
+                return
+            }
+            completion(.success(num.int64Value))
         }
     }
 
     func getDouble(key: String, completion: @escaping (Result<Double?, Error>) -> Void) {
         queue.async { [self] in
-            let pKey = prefixedKey(key)
-            if defaults.object(forKey: pKey) == nil {
+            guard let value = defaults.object(forKey: prefixedKey(key)) else {
                 completion(.success(nil))
-            } else {
-                completion(.success(defaults.double(forKey: pKey)))
+                return
             }
+            // Reject Bool; integer values are allowed (lossless to Double).
+            if isStoredAsBool(value) {
+                completion(.success(nil))
+                return
+            }
+            guard let num = value as? NSNumber else {
+                completion(.success(nil))
+                return
+            }
+            completion(.success(num.doubleValue))
         }
     }
 
@@ -243,12 +276,19 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
 
     func getDateTimeMillis(key: String, completion: @escaping (Result<Int64?, Error>) -> Void) {
         queue.async { [self] in
-            let pKey = prefixedDateTimeKey(key)
-            if defaults.object(forKey: pKey) == nil {
+            guard let value = defaults.object(forKey: prefixedDateTimeKey(key)) else {
                 completion(.success(nil))
-            } else {
-                completion(.success(Int64(defaults.integer(forKey: pKey))))
+                return
             }
+            if isStoredAsBool(value) {
+                completion(.success(nil))
+                return
+            }
+            guard let num = value as? NSNumber, !isFloatingPointNumber(num) else {
+                completion(.success(nil))
+                return
+            }
+            completion(.success(num.int64Value))
         }
     }
 

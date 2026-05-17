@@ -60,25 +60,51 @@ class NativeDatastore {
 
   final DatastoreApi _api;
 
-  /// Validates that [key] is a non-empty string.
+  /// Prefixes the native side uses internally to namespace typed storage.
+  /// User keys are rejected if they start with any of these to avoid
+  /// silent collisions with `setStringList`/`setBytes`/`setDateTime`/`setMap`.
+  static const List<String> _reservedPrefixes = <String>[
+    '__list__:',
+    '__bytes__:',
+    '__datetime__:',
+    '__map__:',
+  ];
+
+  /// Validates that [key] is a non-empty string and does not start with
+  /// a prefix reserved for internal typed storage.
   static void _validateKey(String key) {
     if (key.isEmpty) {
       throw const NativeDatastoreException(
         'Key must not be empty',
       );
     }
+    for (final prefix in _reservedPrefixes) {
+      if (key.startsWith(prefix)) {
+        throw NativeDatastoreException(
+          'Key must not start with reserved prefix "$prefix"',
+        );
+      }
+    }
   }
 
   /// Wraps a platform call with error handling.
   ///
-  /// Catches [PlatformException] and rethrows as [NativeDatastoreException]
-  /// with context about which [operation] failed.
+  /// Catches [PlatformException] and any other error thrown by [fn]
+  /// (e.g., JSON encode/decode errors) and rethrows them as
+  /// [NativeDatastoreException] with context about which [operation] failed.
   Future<T> _guard<T>(String operation, Future<T> Function() fn) async {
     try {
       return await fn();
+    } on NativeDatastoreException {
+      rethrow;
     } on PlatformException catch (e) {
       throw NativeDatastoreException(
         'Failed to $operation: ${e.message ?? e.code}',
+        cause: e,
+      );
+    } catch (e) {
+      throw NativeDatastoreException(
+        'Failed to $operation: $e',
         cause: e,
       );
     }

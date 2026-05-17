@@ -1,3 +1,25 @@
+## 1.2.0
+
+* **Android resilience on aggressive-kill OEMs (MIUI, ColorOS, OriginOS, HyperOS, etc.):**
+  added `ReplaceFileCorruptionHandler` so a half-written prefs file (caused by the OS killing the
+  process mid-write) auto-recovers as empty instead of throwing `CorruptionException` on every
+  subsequent call.
+* **iOS strict numeric typing:** `getBool` / `getInt` / `getDouble` / `getDateTimeMillis` now use
+  `CFGetTypeID` and `NSNumber.objCType` to return `null` instead of silently coercing across
+  stored types (e.g., `getInt` after `setBool` no longer returns `1`).
+* **Reserved-prefix key validation:** user keys starting with the internal sentinels
+  `__list__:`, `__bytes__:`, `__datetime__:`, `__map__:` are now rejected with a clear error,
+  preventing silent collisions with typed-storage slots.
+* **Stronger error wrapping:** `_guard` now also wraps non-`PlatformException` errors (e.g.,
+  `FormatException` from corrupt stored JSON, `JsonUnsupportedObjectError` from a non-encodable
+  `setMap` value) so every public method honors its documented "throws `NativeDatastoreException`"
+  contract.
+* **Android detach race:** `onDetachedFromEngine` now cancels the coroutine scope before tearing
+  down the Pigeon channel, and `launchSafe` rethrows `CancellationException` so an in-flight
+  callback never tries to reply through a dead channel.
+* **Note:** the plugin is single-process. If your app runs a secondary process (e.g., a push
+  service) that also writes preferences, see the README's "Multi-process limitation" section.
+
 ## 1.1.2
 
 * Released on 2026-04-06.

@@ -72,7 +72,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  native_datastore: ^1.0.2
+  native_datastore: ^1.2.0
 ```
 
 Then run:
@@ -270,6 +270,9 @@ final value = await datastore.getString('key');
 - Uses `androidx.datastore:datastore-preferences` with Kotlin Coroutines
 - All operations run on `Dispatchers.IO` -- never blocks the UI thread
 - Data location: `data/data/<package>/files/datastore/native_datastore_prefs.preferences_pb`
+- A `ReplaceFileCorruptionHandler` is installed so a half-written prefs file
+  (caused by the OS killing the process mid-write) recovers as empty
+  instead of throwing `CorruptionException` on every subsequent call.
 - Minimum SDK: **21** (Android 5.0)
 
 ### iOS
@@ -278,7 +281,56 @@ final value = await datastore.getString('key');
 - Keys are namespaced with `native_datastore.` prefix to avoid collisions
 - String lists stored natively as arrays (no JSON encoding overhead)
 - Binary data (`Uint8List`) stored natively as `Data`
+- Numeric getters (`getBool`, `getInt`, `getDouble`, `getDateTime`) are
+  strict: they return `null` when the stored value's underlying type does
+  not match (no silent coercion across types).
 - Minimum iOS: **12.0**
+
+---
+
+## Resilience on aggressive-kill OEMs
+
+Memory- and battery-optimised Android skins (MIUI, ColorOS, OriginOS,
+HyperOS, ColorOS-derived ROMs, Realme UI, FuntouchOS, etc.) regularly
+terminate background processes without warning. `native_datastore` is
+built to survive that:
+
+- **Atomic writes.** Each write goes through Jetpack DataStore, which uses
+  the filesystem's atomic rename to replace the prefs file. A process kill
+  mid-write either commits the full new file or leaves the previous file
+  intact -- never a half-merged record.
+- **Durable acknowledgements.** `await datastore.setX(...)` only resolves
+  after the underlying `edit { }` block has fsync'd, so a successfully
+  awaited write is on disk before the next line of Dart runs.
+- **Auto-recovery from corruption.** If a kill lands inside the fsync
+  window and the file ends up unreadable, the corruption handler replaces
+  it with empty preferences on the next read. The app keeps working --
+  at worst losing the single write that was interrupted, never bricked.
+- **Clean detach.** When the Flutter engine is destroyed, in-flight
+  coroutines are cancelled before the Pigeon channel is torn down, so the
+  plugin never replies on a dead channel.
+
+### ⚠️ Multi-process limitation
+
+The Android backend uses single-process Preferences DataStore. **It is
+not safe to use this plugin from more than one process at a time.** This
+matters if your app declares any of the following in
+`AndroidManifest.xml`:
+
+- A `<service>`, `<receiver>`, or `<activity>` with `android:process=":foo"`
+- A vendor push SDK (Xiaomi, OPPO, Vivo, Huawei, FCM in a separate process,
+  Tencent TPNS, etc.) that runs in its own process
+- A `ContentProvider` configured with a separate process
+
+Symptoms of multi-process misuse: silently lost writes, "old" values
+reappearing after an app upgrade, or in the worst case repeated
+`CorruptionException`s (which the corruption handler will swallow by
+resetting the file to empty -- i.e., data loss).
+
+**Recommended pattern:** call `native_datastore` only from the main
+process (the one Flutter runs in). If a secondary process needs to read
+config, push a snapshot to it through Intent extras, a `ContentProvider`,
+or a small `SharedPreferences` file dedicated to that process.
 
 ---
 

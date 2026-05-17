@@ -235,6 +235,44 @@ void main() {
         throwsA(isA<NativeDatastoreException>()),
       );
     });
+
+    test('rejects keys starting with reserved __list__ prefix', () {
+      expect(
+        () => datastore.setString('__list__:foo', 'v'),
+        throwsA(isA<NativeDatastoreException>().having(
+          (e) => e.message,
+          'message',
+          contains('reserved prefix'),
+        )),
+      );
+    });
+
+    test('rejects keys starting with reserved __bytes__ prefix', () {
+      expect(
+        () => datastore.getBytes('__bytes__:foo'),
+        throwsA(isA<NativeDatastoreException>()),
+      );
+    });
+
+    test('rejects keys starting with reserved __datetime__ prefix', () {
+      expect(
+        () => datastore.setDateTime('__datetime__:foo', DateTime.now()),
+        throwsA(isA<NativeDatastoreException>()),
+      );
+    });
+
+    test('rejects keys starting with reserved __map__ prefix', () {
+      expect(
+        () => datastore.getMap('__map__:foo'),
+        throwsA(isA<NativeDatastoreException>()),
+      );
+    });
+
+    test('accepts keys that merely contain the prefix but do not start with it',
+        () async {
+      MockDatastoreChannel.mockMethod('setString', null);
+      await datastore.setString('user__list__:foo', 'v');
+    });
   });
 
   // -------------------------------------------------------
@@ -586,6 +624,30 @@ void main() {
           () => datastore.setMap('k', {'a': 1}));
       expect(e.message, contains('setMap'));
       expect(e.cause, isA<PlatformException>());
+    });
+
+    test('getMap wraps corrupt JSON as NativeDatastoreException', () async {
+      MockDatastoreChannel.mockMethod('getJsonMap', 'not valid json');
+      final e = await _expectException(() => datastore.getMap('k'));
+      expect(e.message, contains('getMap'));
+      expect(e.cause, isA<FormatException>());
+    });
+
+    test('getMap wraps non-object JSON as NativeDatastoreException', () async {
+      // Top-level JSON array can't be cast to Map<String, dynamic>.
+      MockDatastoreChannel.mockMethod('getJsonMap', '[1,2,3]');
+      final e = await _expectException(() => datastore.getMap('k'));
+      expect(e.message, contains('getMap'));
+    });
+
+    test('setMap wraps non-encodable value as NativeDatastoreException',
+        () async {
+      MockDatastoreChannel.mockMethod('setJsonMap', null);
+      // A Dart object that jsonEncode can't serialize.
+      final e = await _expectException(
+        () => datastore.setMap('k', {'bad': Object()}),
+      );
+      expect(e.message, contains('setMap'));
     });
   });
 

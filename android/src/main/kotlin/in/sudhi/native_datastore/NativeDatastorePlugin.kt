@@ -3,14 +3,17 @@ package `in`.sudhi.native_datastore
 import android.content.Context
 import android.util.Base64
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,8 +22,17 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 
+// Aggressive memory-management OEMs (MIUI, ColorOS, OriginOS, HyperOS, etc.)
+// frequently kill processes mid-write, which can leave the prefs file
+// half-written. Without a corruption handler, DataStore would throw
+// CorruptionException on every subsequent call. The handler recovers by
+// replacing the unreadable file with empty preferences so the app keeps
+// working instead of being permanently broken.
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "native_datastore_prefs"
+    name = "native_datastore_prefs",
+    corruptionHandler = ReplaceFileCorruptionHandler(
+        produceNewData = { emptyPreferences() }
+    )
 )
 
 class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
@@ -38,8 +50,10 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        DatastoreApi.setUp(binding.binaryMessenger, null)
+        // Cancel pending coroutines first so any in-flight work observes the
+        // cancellation before we tear down the Pigeon channel they would reply on.
         scope?.cancel()
+        DatastoreApi.setUp(binding.binaryMessenger, null)
         scope = null
         context = null
     }
@@ -47,6 +61,8 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
     /**
      * Safely launches a coroutine on the plugin scope.
      * If the plugin is not attached, the callback receives an error immediately.
+     * If the plugin detaches while the coroutine is running, CancellationException
+     * is rethrown so the callback isn't invoked on a torn-down channel.
      */
     private fun <T> launchSafe(
         callback: (Result<T>) -> Unit,
@@ -64,6 +80,8 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
             try {
                 val result = block(currentContext)
                 callback(Result.success(result))
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 callback(Result.failure(e))
             }
