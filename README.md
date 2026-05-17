@@ -408,6 +408,34 @@ Contributions are welcome! Please open an [issue](https://github.com/sudhi001/na
 
 ---
 
+## Releasing
+
+Releases are automated via [`.github/workflows/release.yml`](.github/workflows/release.yml).
+Pushing a tag that matches `v*` runs tests and, on pass, publishes to pub.dev
+(via OIDC — no API key in the repo) and creates a matching GitHub Release.
+
+```bash
+# 1. Bump pubspec.yaml version (e.g. 1.3.0 → 1.3.1)
+# 2. Commit and push the version bump
+git commit -am "Release 1.3.1"
+git push
+
+# 3. Tag and push the tag — this triggers the workflow
+git tag v1.3.1
+git push origin v1.3.1
+```
+
+The workflow verifies the pushed tag matches `v{pubspec.version}` and aborts
+if they disagree. If a publish fails partway, either bump the patch version
+and push a new tag, or delete the bad tag locally and on the remote and retry:
+
+```bash
+git tag -d v1.3.1
+git push --delete origin v1.3.1
+```
+
+---
+
 ## License
 
 BSD 3-Clause License -- see the [LICENSE](LICENSE) file for details.

@@ -1,131 +1,96 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# -----------------------------------------------------------
-# release.sh — Release and publish native_datastore to pub.dev
+# -----------------------------------------------------------------------------
+# release.sh — Trigger a release.
+#
+# Assumes you've already bumped `version:` in pubspec.yaml and written a
+# CHANGELOG entry. This script:
+#
+#   1. Reads the version from pubspec.yaml and derives tag v{version}.
+#   2. Confirms the tag does not yet exist locally or on origin.
+#   3. Stages any working-tree changes and commits them (skipped if none).
+#   4. Creates annotated tag v{version}.
+#   5. Pushes the commit and the tag — which triggers
+#      .github/workflows/release.yml, where tests run and (on pass) the
+#      package is published to pub.dev via OIDC.
 #
 # Usage:
-#   ./release.sh 1.0.0
-#
-# What it does:
-#   1. Validates the version format (x.y.z)
-#   2. Updates pubspec.yaml and CHANGELOG.md
-#   3. Runs flutter analyze and flutter test
-#   4. Creates a commit: "RELEASE x.y.z" and tag: vx.y.z
-#   5. Publishes to pub.dev
-#   6. Pushes commit and tag to origin
-# -----------------------------------------------------------
+#   ./release.sh                       # commit message: "Release vX.Y.Z"
+#   ./release.sh "fix typo in README"  # custom commit message
+# -----------------------------------------------------------------------------
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 error() { echo -e "${RED}Error: $1${NC}" >&2; exit 1; }
 info()  { echo -e "${GREEN}$1${NC}"; }
 warn()  { echo -e "${YELLOW}$1${NC}"; }
 
-# ---- Validate input ----
-VERSION="${1:-}"
-if [ -z "$VERSION" ]; then
-  error "Usage: ./release.sh <version>  (e.g. ./release.sh 1.0.0)"
-fi
+# ---- Read version from pubspec.yaml ----
+VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | tr -d '[:space:]')
+[ -z "$VERSION" ] && error "Could not read 'version:' from pubspec.yaml"
+TAG="v$VERSION"
+COMMIT_MSG="${1:-Release $TAG}"
 
-if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-  error "Invalid version format '$VERSION'. Expected x.y.z (e.g. 1.0.0)"
-fi
+info "Version: $VERSION"
+info "Tag:     $TAG"
+info "Commit:  $COMMIT_MSG"
+echo
 
-# ---- Ensure clean working tree ----
-if [ -n "$(git status --porcelain)" ]; then
-  error "Working tree is not clean. Commit or stash your changes first."
-fi
-
-# ---- Ensure we're on main ----
+# ---- Branch sanity ----
 BRANCH=$(git branch --show-current)
 if [ "$BRANCH" != "main" ]; then
-  warn "Warning: You are on branch '$BRANCH', not 'main'."
+  warn "You are on branch '$BRANCH', not 'main'."
   read -rp "Continue anyway? [y/N] " CONFIRM
-  if [[ "$CONFIRM" != [yY] ]]; then
-    exit 1
-  fi
+  [[ "$CONFIRM" != [yY] ]] && exit 1
 fi
 
-# ---- Check current version ----
-CURRENT_VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
-info "Current version: $CURRENT_VERSION"
-info "New version:     $VERSION"
-
-if [ "$CURRENT_VERSION" = "$VERSION" ]; then
-  error "pubspec.yaml is already at version $VERSION"
+# ---- Tag doesn't already exist (local) ----
+if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+  error "Tag $TAG already exists locally. Bump pubspec.yaml or delete the tag:
+    git tag -d $TAG"
 fi
 
-# ---- Check tag doesn't already exist ----
-if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-  error "Tag v$VERSION already exists"
+# ---- Tag doesn't already exist (remote) ----
+git fetch --tags --quiet origin 2>/dev/null || true
+if git ls-remote --exit-code --tags origin "$TAG" >/dev/null 2>&1; then
+  error "Tag $TAG already exists on origin. Bump pubspec.yaml or delete the remote tag:
+    git push --delete origin $TAG"
 fi
 
-# ---- Update pubspec.yaml ----
-info "Updating pubspec.yaml..."
-sed -i.bak "s/^version: .*/version: $VERSION/" pubspec.yaml
-rm -f pubspec.yaml.bak
-
-# ---- Update CHANGELOG.md ----
-info "Updating CHANGELOG.md..."
-DATE=$(date +%Y-%m-%d)
-CHANGELOG_ENTRY="## $VERSION\n\n* Released on $DATE.\n"
-
-if [ -f CHANGELOG.md ]; then
-  {
-    echo -e "$CHANGELOG_ENTRY"
-    cat CHANGELOG.md
-  } > CHANGELOG.md.tmp
-  mv CHANGELOG.md.tmp CHANGELOG.md
+# ---- Show working tree state ----
+if [ -n "$(git status --porcelain)" ]; then
+  info "Pending changes (will be staged via 'git add -A'):"
+  git status --short
 else
-  echo -e "$CHANGELOG_ENTRY" > CHANGELOG.md
+  info "Working tree is clean — will tag current HEAD only."
+fi
+echo
+
+read -rp "Proceed with commit, tag, and push? [y/N] " CONFIRM
+[[ "$CONFIRM" != [yY] ]] && { info "Aborted."; exit 1; }
+
+# ---- Stage & commit (skipped if nothing changed) ----
+if [ -n "$(git status --porcelain)" ]; then
+  info "Committing..."
+  git add -A
+  git commit -m "$COMMIT_MSG"
 fi
 
-# ---- Run checks ----
-info "Running flutter pub get..."
-flutter pub get
+# ---- Tag ----
+info "Tagging $TAG..."
+git tag -a "$TAG" -m "Release $TAG"
 
-info "Running flutter analyze..."
-flutter analyze
+# ---- Push commit then tag ----
+info "Pushing branch '$BRANCH'..."
+git push origin "$BRANCH"
 
-info "Running flutter test..."
-flutter test
+info "Pushing tag $TAG..."
+git push origin "$TAG"
 
-# ---- Commit (so dry-run sees a clean tree) ----
-info "Creating release commit..."
-git add pubspec.yaml CHANGELOG.md
-git commit -m "RELEASE $VERSION"
-
-# ---- Dry run publish ----
-info "Running publish dry run..."
-if ! flutter pub publish --dry-run; then
-  warn "Dry run failed. Rolling back release commit..."
-  git reset --soft HEAD~1
-  git restore --staged pubspec.yaml CHANGELOG.md
-  git checkout -- pubspec.yaml CHANGELOG.md
-  error "Publish dry run failed. Commit has been rolled back."
-fi
-
-# ---- Publish to pub.dev ----
-info "Publishing to pub.dev..."
-if ! flutter pub publish --force; then
-  warn "Publish failed. Rolling back release commit..."
-  git reset --soft HEAD~1
-  git restore --staged pubspec.yaml CHANGELOG.md
-  git checkout -- pubspec.yaml CHANGELOG.md
-  error "Publish to pub.dev failed. Commit has been rolled back."
-fi
-
-# ---- Tag and push ----
-git tag "v$VERSION"
-
-info "Pushing to origin..."
-git push
-git push --tags
-
-info ""
-info "Released $VERSION to pub.dev!"
-info "  https://pub.dev/packages/native_datastore"
+echo
+info "Done. GitHub Actions is now running tests and publishing."
+info "  https://github.com/sudhi001/native_datastore/actions"

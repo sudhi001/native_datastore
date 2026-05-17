@@ -1,5 +1,5 @@
 group = "in.sudhi.native_datastore"
-version = "1.3.0"
+version = "1.3.2"
 
 buildscript {
     val kotlinVersion = "2.2.20"

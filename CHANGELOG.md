@@ -1,3 +1,13 @@
+## 1.3.2
+
+* Fixed OIDC authentication in the GitHub Actions release workflow. The publish
+  job now explicitly requests a GitHub OIDC token for the `https://pub.dev`
+  audience and registers it via `dart pub token add` before publishing, so
+  `dart pub publish` no longer falls back to interactive browser auth when
+  used with `subosito/flutter-action` (which doesn't auto-configure pub.dev
+  credentials the way `dart-lang/setup-dart@v1.3+` does).
+* No code changes — package contents are identical to 1.3.1.
+
 ## 1.3.1
   - Nothing special just a build automation with Github actions
 ## 1.3.0
