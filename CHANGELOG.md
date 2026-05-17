@@ -39,6 +39,7 @@
   - Renamed for clarity: Swift `prefix` → `keyNamespace`, `queue` → `serialQueue`; Kotlin
     `launchSafe` → `launchOnAttached`.
   - Repeated dartdoc on typed getters/setters consolidated via `{@template}`/`{@macro}`.
+  - Github actions
 
 ## 1.2.0
 
