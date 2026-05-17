@@ -274,7 +274,7 @@ class DatastoreApi {
     return pigeonVar_replyValue! as bool;
   }
 
-  Future<bool> clear() async {
+  Future<void> clear() async {
     final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.clear$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
@@ -284,13 +284,12 @@ class DatastoreApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+    _extractReplyValueOrThrow(
         pigeonVar_replyList,
         pigeonVar_channelName,
-        isNullValid: false,
+        isNullValid: true,
     )
     ;
-    return pigeonVar_replyValue! as bool;
   }
 
   Future<Map<String, Object>> getAll() async {
@@ -387,8 +386,8 @@ class DatastoreApi {
     ;
   }
 
-  Future<int?> getDateTimeMillis(String key) async {
-    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.getDateTimeMillis$pigeonVar_messageChannelSuffix';
+  Future<int?> getDateTime(String key) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.getDateTime$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -406,8 +405,8 @@ class DatastoreApi {
     return pigeonVar_replyValue as int?;
   }
 
-  Future<void> setDateTimeMillis(String key, int value) async {
-    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.setDateTimeMillis$pigeonVar_messageChannelSuffix';
+  Future<void> setDateTime(String key, int value) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.setDateTime$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -424,8 +423,8 @@ class DatastoreApi {
     ;
   }
 
-  Future<String?> getJsonMap(String key) async {
-    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.getJsonMap$pigeonVar_messageChannelSuffix';
+  Future<String?> getMap(String key) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.getMap$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -443,8 +442,8 @@ class DatastoreApi {
     return pigeonVar_replyValue as String?;
   }
 
-  Future<void> setJsonMap(String key, String value) async {
-    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.setJsonMap$pigeonVar_messageChannelSuffix';
+  Future<void> setMap(String key, String value) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.setMap$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,

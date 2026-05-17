@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -28,6 +27,26 @@ class NativeDatastoreException implements Exception {
     return 'NativeDatastoreException: $message';
   }
 }
+
+/// Prefixes the native side uses internally to namespace typed storage so
+/// `setStringList`/`setBytes`/`setDateTime`/`setMap` cannot collide with the
+/// scalar getters/setters that share the same flat key-value store.
+///
+/// Keep these in sync with the Swift and Kotlin constants of the same names.
+class _BucketPrefix {
+  static const String list = '__list__:';
+  static const String bytes = '__bytes__:';
+  static const String dateTime = '__datetime__:';
+  static const String map = '__map__:';
+
+  static const List<String> all = <String>[list, bytes, dateTime, map];
+}
+
+/// Upper bound on `setBytes` / `setMap` payloads. UserDefaults and DataStore
+/// are designed for small preference values; storing larger blobs degrades
+/// app launch time and can trigger OS-level warnings. Callers that need bulk
+/// storage should use a database or the filesystem instead.
+const int _maxBlobBytes = 1024 * 1024;
 
 /// A Flutter plugin for native persistent key-value storage.
 ///
@@ -60,25 +79,26 @@ class NativeDatastore {
 
   final DatastoreApi _api;
 
-  /// Prefixes the native side uses internally to namespace typed storage.
-  /// User keys are rejected if they start with any of these to avoid
-  /// silent collisions with `setStringList`/`setBytes`/`setDateTime`/`setMap`.
-  static const List<String> _reservedPrefixes = <String>[
-    '__list__:',
-    '__bytes__:',
-    '__datetime__:',
-    '__map__:',
-  ];
-
-  /// Validates that [key] is a non-empty string and does not start with
-  /// a prefix reserved for internal typed storage.
+  /// {@template native_datastore.getter}
+  /// Returns `null` if [key] does not exist.
+  ///
+  /// Throws [NativeDatastoreException] if [key] is empty, starts with a
+  /// reserved prefix, or the platform call fails.
+  /// {@endtemplate}
+  ///
+  /// {@template native_datastore.setter}
+  /// If [key] already exists, its value is overwritten.
+  ///
+  /// Throws [NativeDatastoreException] if [key] is empty, starts with a
+  /// reserved prefix, or the platform call fails.
+  /// {@endtemplate}
   static void _validateKey(String key) {
     if (key.isEmpty) {
       throw const NativeDatastoreException(
         'Key must not be empty',
       );
     }
-    for (final prefix in _reservedPrefixes) {
+    for (final prefix in _BucketPrefix.all) {
       if (key.startsWith(prefix)) {
         throw NativeDatastoreException(
           'Key must not start with reserved prefix "$prefix"',
@@ -87,14 +107,9 @@ class NativeDatastore {
     }
   }
 
-  /// Wraps a platform call with error handling.
-  ///
-  /// Catches [PlatformException] and any other error thrown by [fn]
-  /// (e.g., JSON encode/decode errors) and rethrows them as
-  /// [NativeDatastoreException] with context about which [operation] failed.
-  Future<T> _guard<T>(String operation, Future<T> Function() fn) async {
+  Future<T> _guard<T>(String operation, Future<T> Function() action) async {
     try {
-      return await fn();
+      return await action();
     } on NativeDatastoreException {
       rethrow;
     } on PlatformException catch (e) {
@@ -112,10 +127,7 @@ class NativeDatastore {
 
   /// Reads a [String] value from the data store for the given [key].
   ///
-  /// Returns `null` if the [key] does not exist.
-  ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.getter}
   Future<String?> getString(String key) {
     _validateKey(key);
     return _guard('getString("$key")', () => _api.getString(key));
@@ -123,10 +135,7 @@ class NativeDatastore {
 
   /// Reads a [bool] value from the data store for the given [key].
   ///
-  /// Returns `null` if the [key] does not exist.
-  ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.getter}
   Future<bool?> getBool(String key) {
     _validateKey(key);
     return _guard('getBool("$key")', () => _api.getBool(key));
@@ -134,10 +143,7 @@ class NativeDatastore {
 
   /// Reads an [int] value from the data store for the given [key].
   ///
-  /// Returns `null` if the [key] does not exist.
-  ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.getter}
   Future<int?> getInt(String key) {
     _validateKey(key);
     return _guard('getInt("$key")', () => _api.getInt(key));
@@ -145,10 +151,7 @@ class NativeDatastore {
 
   /// Reads a [double] value from the data store for the given [key].
   ///
-  /// Returns `null` if the [key] does not exist.
-  ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.getter}
   Future<double?> getDouble(String key) {
     _validateKey(key);
     return _guard('getDouble("$key")', () => _api.getDouble(key));
@@ -156,10 +159,7 @@ class NativeDatastore {
 
   /// Reads a [List] of [String] values from the data store for the given [key].
   ///
-  /// Returns `null` if the [key] does not exist.
-  ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.getter}
   Future<List<String>?> getStringList(String key) {
     _validateKey(key);
     return _guard('getStringList("$key")', () => _api.getStringList(key));
@@ -167,10 +167,7 @@ class NativeDatastore {
 
   /// Writes a [String] [value] to the data store for the given [key].
   ///
-  /// If the [key] already exists, its value is overwritten.
-  ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.setter}
   Future<void> setString(String key, String value) {
     _validateKey(key);
     return _guard('setString("$key")', () => _api.setString(key, value));
@@ -178,10 +175,7 @@ class NativeDatastore {
 
   /// Writes a [bool] [value] to the data store for the given [key].
   ///
-  /// If the [key] already exists, its value is overwritten.
-  ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.setter}
   Future<void> setBool(String key, bool value) {
     _validateKey(key);
     return _guard('setBool("$key")', () => _api.setBool(key, value));
@@ -189,10 +183,7 @@ class NativeDatastore {
 
   /// Writes an [int] [value] to the data store for the given [key].
   ///
-  /// If the [key] already exists, its value is overwritten.
-  ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.setter}
   Future<void> setInt(String key, int value) {
     _validateKey(key);
     return _guard('setInt("$key")', () => _api.setInt(key, value));
@@ -200,10 +191,7 @@ class NativeDatastore {
 
   /// Writes a [double] [value] to the data store for the given [key].
   ///
-  /// If the [key] already exists, its value is overwritten.
-  ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.setter}
   Future<void> setDouble(String key, double value) {
     _validateKey(key);
     return _guard('setDouble("$key")', () => _api.setDouble(key, value));
@@ -211,10 +199,7 @@ class NativeDatastore {
 
   /// Writes a [List] of [String] values to the data store for the given [key].
   ///
-  /// If the [key] already exists, its value is overwritten.
-  ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.setter}
   Future<void> setStringList(String key, List<String> value) {
     _validateKey(key);
     return _guard(
@@ -225,7 +210,8 @@ class NativeDatastore {
 
   /// Removes the value associated with the given [key] from the data store.
   ///
-  /// Returns `true` if the [key] existed and was removed, `false` otherwise.
+  /// Returns `true` if the [key] existed and was removed, `false` if no
+  /// value was stored under [key].
   ///
   /// Throws [NativeDatastoreException] if the [key] is empty or
   /// the platform call fails.
@@ -234,27 +220,37 @@ class NativeDatastore {
     return _guard('remove("$key")', () => _api.remove(key));
   }
 
-  /// Removes all key-value pairs from the data store.
-  ///
-  /// Returns `true` if the operation was successful.
+  /// Removes every key-value pair from the data store.
   ///
   /// Throws [NativeDatastoreException] if the platform call fails.
-  Future<bool> clear() {
+  Future<void> clear() {
     return _guard('clear', _api.clear);
   }
 
-  /// Returns all key-value pairs currently stored in the data store.
+  /// Returns a snapshot of every key-value pair currently stored.
   ///
-  /// The returned map contains the key as a [String] and the value as
-  /// an [Object] which can be a [String], [int], [double], [bool],
-  /// or [List] of [String].
+  /// The map's values are a heterogeneous union of the runtime types
+  /// produced by each setter:
+  ///
+  ///   * `setString` → [String]
+  ///   * `setBool`   → [bool]
+  ///   * `setInt`    → [int]
+  ///   * `setDouble` → [double]
+  ///   * `setStringList` → [List]<[String]>
+  ///   * `setBytes`  → [Uint8List]
+  ///   * `setDateTime` → [int] (milliseconds since epoch, UTC) — *not* a [DateTime]
+  ///   * `setMap`    → [String] (the underlying JSON payload) — *not* a [Map]
+  ///
+  /// Use the typed getters when you need a [DateTime] or [Map] back.
   ///
   /// Throws [NativeDatastoreException] if the platform call fails.
   Future<Map<String, Object>> getAll() {
     return _guard('getAll', _api.getAll);
   }
 
-  /// Returns a list of all keys currently stored in the data store.
+  /// Returns the user-facing keys currently stored. Each typed setter is
+  /// reported under its bare key (internal prefixes are stripped), and a key
+  /// stored via multiple setters appears once.
   ///
   /// Throws [NativeDatastoreException] if the platform call fails.
   Future<List<String>> getKeys() {
@@ -272,10 +268,7 @@ class NativeDatastore {
 
   /// Reads a [Uint8List] (binary data) from the data store for the given [key].
   ///
-  /// Returns `null` if the [key] does not exist.
-  ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.getter}
   Future<Uint8List?> getBytes(String key) {
     _validateKey(key);
     return _guard('getBytes("$key")', () => _api.getBytes(key));
@@ -283,26 +276,31 @@ class NativeDatastore {
 
   /// Writes a [Uint8List] (binary data) to the data store for the given [key].
   ///
-  /// If the [key] already exists, its value is overwritten.
+  /// {@macro native_datastore.setter}
   ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// Throws [NativeDatastoreException] if [value] exceeds 1 MiB. The
+  /// underlying platform stores are designed for small preference values;
+  /// larger payloads should use a database or filesystem.
   Future<void> setBytes(String key, Uint8List value) {
     _validateKey(key);
+    if (value.lengthInBytes > _maxBlobBytes) {
+      throw NativeDatastoreException(
+        'setBytes value too large: ${value.lengthInBytes} bytes '
+        '(max $_maxBlobBytes)',
+      );
+    }
     return _guard('setBytes("$key")', () => _api.setBytes(key, value));
   }
 
   /// Reads a [DateTime] from the data store for the given [key].
   ///
   /// The value is stored as milliseconds since epoch (UTC).
-  /// Returns `null` if the [key] does not exist.
   ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.getter}
   Future<DateTime?> getDateTime(String key) {
     _validateKey(key);
     return _guard('getDateTime("$key")', () async {
-      final millis = await _api.getDateTimeMillis(key);
+      final millis = await _api.getDateTime(key);
       return millis != null
           ? DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true)
           : null;
@@ -312,29 +310,25 @@ class NativeDatastore {
   /// Writes a [DateTime] to the data store for the given [key].
   ///
   /// The value is stored as milliseconds since epoch (UTC).
-  /// If the [key] already exists, its value is overwritten.
   ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.setter}
   Future<void> setDateTime(String key, DateTime value) {
     _validateKey(key);
     return _guard(
       'setDateTime("$key")',
-      () => _api.setDateTimeMillis(key, value.toUtc().millisecondsSinceEpoch),
+      () => _api.setDateTime(key, value.toUtc().millisecondsSinceEpoch),
     );
   }
 
   /// Reads a [Map] from the data store for the given [key].
   ///
   /// The value is stored as a JSON string internally.
-  /// Returns `null` if the [key] does not exist.
   ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.getter}
   Future<Map<String, dynamic>?> getMap(String key) {
     _validateKey(key);
     return _guard('getMap("$key")', () async {
-      final json = await _api.getJsonMap(key);
+      final json = await _api.getMap(key);
       return json != null
           ? (jsonDecode(json) as Map<String, dynamic>)
           : null;
@@ -344,15 +338,21 @@ class NativeDatastore {
   /// Writes a [Map] to the data store for the given [key].
   ///
   /// The value is stored as a JSON string internally.
-  /// If the [key] already exists, its value is overwritten.
   ///
-  /// Throws [NativeDatastoreException] if the [key] is empty or
-  /// the platform call fails.
+  /// {@macro native_datastore.setter}
+  ///
+  /// Throws [NativeDatastoreException] if the encoded JSON exceeds 1 MiB
+  /// or [value] contains objects that cannot be JSON-encoded.
   Future<void> setMap(String key, Map<String, dynamic> value) {
     _validateKey(key);
-    return _guard(
-      'setMap("$key")',
-      () => _api.setJsonMap(key, jsonEncode(value)),
-    );
+    return _guard('setMap("$key")', () async {
+      final json = jsonEncode(value);
+      if (json.length > _maxBlobBytes) {
+        throw NativeDatastoreException(
+          'setMap value too large: ${json.length} bytes (max $_maxBlobBytes)',
+        );
+      }
+      await _api.setMap(key, json);
+    });
   }
 }

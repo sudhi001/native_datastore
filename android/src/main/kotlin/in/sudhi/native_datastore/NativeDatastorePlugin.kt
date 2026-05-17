@@ -13,6 +13,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +29,9 @@ import org.json.JSONArray
 // CorruptionException on every subsequent call. The handler recovers by
 // replacing the unreadable file with empty preferences so the app keeps
 // working instead of being permanently broken.
+//
+// The receiver MUST stay `binding.applicationContext` — switching to an
+// Activity context would leak the activity for the lifetime of the process.
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
     name = "native_datastore_prefs",
     corruptionHandler = ReplaceFileCorruptionHandler(
@@ -36,6 +40,17 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
 )
 
 class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
+
+    companion object {
+        // Per-type buckets sharing the flat DataStore key space. Keep these
+        // in sync with the Dart `_BucketPrefix` and Swift `*Bucket` constants.
+        private const val LIST_BUCKET = "__list__:"
+        private const val BYTES_BUCKET = "__bytes__:"
+        private const val DATETIME_BUCKET = "__datetime__:"
+        private const val MAP_BUCKET = "__map__:"
+        private val TYPED_BUCKETS =
+            listOf(LIST_BUCKET, BYTES_BUCKET, DATETIME_BUCKET, MAP_BUCKET)
+    }
 
     @Volatile
     private var context: Context? = null
@@ -59,69 +74,117 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
     }
 
     /**
-     * Safely launches a coroutine on the plugin scope.
-     * If the plugin is not attached, the callback receives an error immediately.
-     * If the plugin detaches while the coroutine is running, CancellationException
-     * is rethrown so the callback isn't invoked on a torn-down channel.
+     * Launches a coroutine on the plugin scope and guarantees `callback` is
+     * invoked exactly once:
+     *   - if the plugin is not attached, fails the callback immediately;
+     *   - if `block` succeeds, succeeds the callback with its result;
+     *   - if `block` throws a regular exception, fails the callback with it;
+     *   - if `block` is cancelled (including before it runs), fails the
+     *     callback with a detached-state error so the Dart-side Future never
+     *     hangs in `BinaryMessenger`'s pending-replies map.
      */
-    private fun <T> launchSafe(
+    private fun <T> launchOnAttached(
         callback: (Result<T>) -> Unit,
         block: suspend (Context) -> T
     ) {
         val currentScope = scope
         val currentContext = context
         if (currentScope == null || currentContext == null) {
-            callback(Result.failure(
-                IllegalStateException("NativeDatastorePlugin is not attached to a Flutter engine")
-            ))
+            callback(
+                Result.failure(
+                    IllegalStateException(
+                        "NativeDatastorePlugin is not attached to a Flutter engine"
+                    )
+                )
+            )
             return
         }
-        currentScope.launch {
+        val responded = AtomicBoolean(false)
+        val job = currentScope.launch {
             try {
                 val result = block(currentContext)
-                callback(Result.success(result))
+                if (responded.compareAndSet(false, true)) {
+                    callback(Result.success(result))
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                callback(Result.failure(e))
+                if (responded.compareAndSet(false, true)) {
+                    callback(Result.failure(e))
+                }
             }
         }
+        job.invokeOnCompletion { cause ->
+            // Without this, a cancellation that fires before `block` runs
+            // (the scope-was-cancelled-between-capture-and-launch race) would
+            // leave the Dart-side Completer hanging forever.
+            if (cause is CancellationException &&
+                responded.compareAndSet(false, true)
+            ) {
+                callback(
+                    Result.failure(
+                        IllegalStateException("NativeDatastorePlugin was detached")
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * Splits a stored key name into the user-facing key and the bucket prefix
+     * it was stored under (or `null` for scalar storage).
+     */
+    private fun stripBucket(rawKey: String): Pair<String, String?> {
+        for (bucket in TYPED_BUCKETS) {
+            if (rawKey.startsWith(bucket)) {
+                return rawKey.removePrefix(bucket) to bucket
+            }
+        }
+        return rawKey to null
+    }
+
+    private fun bucketCandidates(key: String): Set<String> {
+        val candidates = mutableSetOf(key)
+        for (bucket in TYPED_BUCKETS) {
+            candidates += bucket + key
+        }
+        return candidates
     }
 
     // ---------- Getters ----------
 
     override fun getString(key: String, callback: (Result<String?>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             val prefs = ctx.dataStore.data.first()
             prefs[stringPreferencesKey(key)]
         }
     }
 
     override fun getBool(key: String, callback: (Result<Boolean?>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             val prefs = ctx.dataStore.data.first()
             prefs[booleanPreferencesKey(key)]
         }
     }
 
     override fun getInt(key: String, callback: (Result<Long?>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             val prefs = ctx.dataStore.data.first()
             prefs[longPreferencesKey(key)]
         }
     }
 
     override fun getDouble(key: String, callback: (Result<Double?>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             val prefs = ctx.dataStore.data.first()
             prefs[doublePreferencesKey(key)]
         }
     }
 
     override fun getStringList(key: String, callback: (Result<List<String>?>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             val prefs = ctx.dataStore.data.first()
-            val json = prefs[stringPreferencesKey("__list__:$key")]
+            val json = prefs[stringPreferencesKey(LIST_BUCKET + key)]
             if (json == null) {
                 null
             } else {
@@ -134,7 +197,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
     // ---------- Setters ----------
 
     override fun setString(key: String, value: String, callback: (Result<Unit>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             ctx.dataStore.edit { prefs ->
                 prefs[stringPreferencesKey(key)] = value
             }
@@ -142,7 +205,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
     }
 
     override fun setBool(key: String, value: Boolean, callback: (Result<Unit>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             ctx.dataStore.edit { prefs ->
                 prefs[booleanPreferencesKey(key)] = value
             }
@@ -150,7 +213,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
     }
 
     override fun setInt(key: String, value: Long, callback: (Result<Unit>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             ctx.dataStore.edit { prefs ->
                 prefs[longPreferencesKey(key)] = value
             }
@@ -158,7 +221,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
     }
 
     override fun setDouble(key: String, value: Double, callback: (Result<Unit>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             ctx.dataStore.edit { prefs ->
                 prefs[doublePreferencesKey(key)] = value
             }
@@ -166,10 +229,10 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
     }
 
     override fun setStringList(key: String, value: List<String>, callback: (Result<Unit>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             val jsonArray = JSONArray(value)
             ctx.dataStore.edit { prefs ->
-                prefs[stringPreferencesKey("__list__:$key")] = jsonArray.toString()
+                prefs[stringPreferencesKey(LIST_BUCKET + key)] = jsonArray.toString()
             }
         }
     }
@@ -177,17 +240,14 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
     // ---------- Remove / Clear ----------
 
     override fun remove(key: String, callback: (Result<Boolean>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
+            val candidates = bucketCandidates(key)
             var removed = false
             ctx.dataStore.edit { prefs ->
-                val keysToRemove = prefs.asMap().keys.filter {
-                    it.name == key || it.name == "__list__:$key" ||
-                    it.name == "__bytes__:$key" || it.name == "__datetime__:$key" ||
-                    it.name == "__map__:$key"
-                }
-                for (k in keysToRemove) {
+                val matching = prefs.asMap().keys.filter { it.name in candidates }
+                for (prefKey in matching) {
                     @Suppress("UNCHECKED_CAST")
-                    prefs.remove(k as Preferences.Key<Any>)
+                    prefs.remove(prefKey as Preferences.Key<Any>)
                     removed = true
                 }
             }
@@ -195,41 +255,31 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
         }
     }
 
-    override fun clear(callback: (Result<Boolean>) -> Unit) {
-        launchSafe(callback) { ctx ->
+    override fun clear(callback: (Result<Unit>) -> Unit) {
+        launchOnAttached(callback) { ctx ->
             ctx.dataStore.edit { it.clear() }
-            true
         }
     }
 
     // ---------- Query ----------
 
     override fun getAll(callback: (Result<Map<String, Any>>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             val prefs = ctx.dataStore.data.first()
             val result = mutableMapOf<String, Any>()
-            for ((key, value) in prefs.asMap()) {
-                when {
-                    key.name.startsWith("__list__:") -> {
-                        val realKey = key.name.removePrefix("__list__:")
+            for ((prefKey, value) in prefs.asMap()) {
+                val (realKey, bucket) = stripBucket(prefKey.name)
+                when (bucket) {
+                    LIST_BUCKET -> {
                         val jsonArray = JSONArray(value as String)
                         val list = List(jsonArray.length()) { i -> jsonArray.getString(i) }
                         result[realKey] = list
                     }
-                    key.name.startsWith("__bytes__:") -> {
-                        val realKey = key.name.removePrefix("__bytes__:")
+                    BYTES_BUCKET -> {
                         result[realKey] = Base64.decode(value as String, Base64.DEFAULT)
                     }
-                    key.name.startsWith("__datetime__:") -> {
-                        val realKey = key.name.removePrefix("__datetime__:")
-                        result[realKey] = value
-                    }
-                    key.name.startsWith("__map__:") -> {
-                        val realKey = key.name.removePrefix("__map__:")
-                        result[realKey] = value
-                    }
                     else -> {
-                        result[key.name] = value
+                        result[realKey] = value
                     }
                 }
             }
@@ -238,81 +288,70 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
     }
 
     override fun getKeys(callback: (Result<List<String>>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             val prefs = ctx.dataStore.data.first()
-            prefs.asMap().keys.map { key ->
-                when {
-                    key.name.startsWith("__list__:") -> key.name.removePrefix("__list__:")
-                    key.name.startsWith("__bytes__:") -> key.name.removePrefix("__bytes__:")
-                    key.name.startsWith("__datetime__:") -> key.name.removePrefix("__datetime__:")
-                    key.name.startsWith("__map__:") -> key.name.removePrefix("__map__:")
-                    else -> key.name
-                }
-            }.distinct()
+            prefs.asMap().keys.map { prefKey -> stripBucket(prefKey.name).first }.distinct()
         }
     }
 
     override fun containsKey(key: String, callback: (Result<Boolean>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             val prefs = ctx.dataStore.data.first()
-            prefs.asMap().keys.any {
-                it.name == key || it.name == "__list__:$key" ||
-                it.name == "__bytes__:$key" || it.name == "__datetime__:$key" ||
-                it.name == "__map__:$key"
-            }
+            val candidates = bucketCandidates(key)
+            prefs.asMap().keys.any { it.name in candidates }
         }
     }
 
     // ---------- Bytes (Uint8List) ----------
 
     override fun getBytes(key: String, callback: (Result<ByteArray?>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             val prefs = ctx.dataStore.data.first()
-            val encoded = prefs[stringPreferencesKey("__bytes__:$key")]
+            val encoded = prefs[stringPreferencesKey(BYTES_BUCKET + key)]
             if (encoded == null) null
             else Base64.decode(encoded, Base64.DEFAULT)
         }
     }
 
     override fun setBytes(key: String, value: ByteArray, callback: (Result<Unit>) -> Unit) {
-        launchSafe(callback) { ctx ->
+        launchOnAttached(callback) { ctx ->
             val encoded = Base64.encodeToString(value, Base64.DEFAULT)
             ctx.dataStore.edit { prefs ->
-                prefs[stringPreferencesKey("__bytes__:$key")] = encoded
+                prefs[stringPreferencesKey(BYTES_BUCKET + key)] = encoded
             }
         }
     }
 
     // ---------- DateTime (millis since epoch) ----------
 
-    override fun getDateTimeMillis(key: String, callback: (Result<Long?>) -> Unit) {
-        launchSafe(callback) { ctx ->
+    override fun getDateTime(key: String, callback: (Result<Long?>) -> Unit) {
+        launchOnAttached(callback) { ctx ->
             val prefs = ctx.dataStore.data.first()
-            prefs[longPreferencesKey("__datetime__:$key")]
+            prefs[longPreferencesKey(DATETIME_BUCKET + key)]
         }
     }
 
-    override fun setDateTimeMillis(key: String, value: Long, callback: (Result<Unit>) -> Unit) {
-        launchSafe(callback) { ctx ->
+    override fun setDateTime(key: String, value: Long, callback: (Result<Unit>) -> Unit) {
+        launchOnAttached(callback) { ctx ->
             ctx.dataStore.edit { prefs ->
-                prefs[longPreferencesKey("__datetime__:$key")] = value
+                prefs[longPreferencesKey(DATETIME_BUCKET + key)] = value
             }
         }
     }
 
     // ---------- JSON Map ----------
 
-    override fun getJsonMap(key: String, callback: (Result<String?>) -> Unit) {
-        launchSafe(callback) { ctx ->
+    override fun getMap(key: String, callback: (Result<String?>) -> Unit) {
+        launchOnAttached(callback) { ctx ->
             val prefs = ctx.dataStore.data.first()
-            prefs[stringPreferencesKey("__map__:$key")]
+            prefs[stringPreferencesKey(MAP_BUCKET + key)]
         }
     }
 
-    override fun setJsonMap(key: String, value: String, callback: (Result<Unit>) -> Unit) {
-        launchSafe(callback) { ctx ->
+    override fun setMap(key: String, value: String, callback: (Result<Unit>) -> Unit) {
+        launchOnAttached(callback) { ctx ->
             ctx.dataStore.edit { prefs ->
-                prefs[stringPreferencesKey("__map__:$key")] = value
+                prefs[stringPreferencesKey(MAP_BUCKET + key)] = value
             }
         }
     }

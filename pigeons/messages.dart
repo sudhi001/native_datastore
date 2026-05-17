@@ -13,7 +13,7 @@ import 'package:pigeon/pigeon.dart';
     ),
     swiftOut: 'ios/Classes/Messages.g.swift',
     swiftOptions: SwiftOptions(
-      errorClassName: 'DatastoreError',
+      errorClassName: 'NativeDatastoreError',
     ),
   ),
 )
@@ -53,7 +53,7 @@ abstract class DatastoreApi {
   bool remove(String key);
 
   @async
-  bool clear();
+  void clear();
 
   @async
   Map<String, Object> getAll();
@@ -71,14 +71,14 @@ abstract class DatastoreApi {
   void setBytes(String key, Uint8List value);
 
   @async
-  int? getDateTimeMillis(String key);
+  int? getDateTime(String key);
 
   @async
-  void setDateTimeMillis(String key, int value);
+  void setDateTime(String key, int value);
 
   @async
-  String? getJsonMap(String key);
+  String? getMap(String key);
 
   @async
-  void setJsonMap(String key, String value);
+  void setMap(String key, String value);
 }

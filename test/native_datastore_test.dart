@@ -63,10 +63,10 @@ class MockDatastoreChannel {
       'containsKey',
       'getBytes',
       'setBytes',
-      'getDateTimeMillis',
-      'setDateTimeMillis',
-      'getJsonMap',
-      'setJsonMap',
+      'getDateTime',
+      'setDateTime',
+      'getMap',
+      'setMap',
     ];
     for (final method in methods) {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -364,9 +364,9 @@ void main() {
       expect(await datastore.remove('k'), false);
     });
 
-    test('clear returns true', () async {
-      MockDatastoreChannel.mockMethod('clear', true);
-      expect(await datastore.clear(), true);
+    test('clear completes', () async {
+      MockDatastoreChannel.mockMethod('clear', null);
+      await datastore.clear();
     });
 
     test('getAll returns map', () async {
@@ -407,34 +407,34 @@ void main() {
     });
 
     test('getDateTime returns value', () async {
-      MockDatastoreChannel.mockMethod('getDateTimeMillis', 1700000000000);
+      MockDatastoreChannel.mockMethod('getDateTime', 1700000000000);
       final result = await datastore.getDateTime('k');
       expect(result, DateTime.utc(2023, 11, 14, 22, 13, 20));
     });
 
     test('getDateTime returns null for missing key', () async {
-      MockDatastoreChannel.mockMethod('getDateTimeMillis', null);
+      MockDatastoreChannel.mockMethod('getDateTime', null);
       expect(await datastore.getDateTime('k'), isNull);
     });
 
     test('setDateTime completes', () async {
-      MockDatastoreChannel.mockMethod('setDateTimeMillis', null);
+      MockDatastoreChannel.mockMethod('setDateTime', null);
       await datastore.setDateTime('k', DateTime.utc(2023));
     });
 
     test('getMap returns value', () async {
-      MockDatastoreChannel.mockMethod('getJsonMap', '{"a":1,"b":"two"}');
+      MockDatastoreChannel.mockMethod('getMap', '{"a":1,"b":"two"}');
       final result = await datastore.getMap('k');
       expect(result, {'a': 1, 'b': 'two'});
     });
 
     test('getMap returns null for missing key', () async {
-      MockDatastoreChannel.mockMethod('getJsonMap', null);
+      MockDatastoreChannel.mockMethod('getMap', null);
       expect(await datastore.getMap('k'), isNull);
     });
 
     test('setMap completes', () async {
-      MockDatastoreChannel.mockMethod('setJsonMap', null);
+      MockDatastoreChannel.mockMethod('setMap', null);
       await datastore.setMap('k', {'x': 1});
     });
   });
@@ -593,7 +593,7 @@ void main() {
     });
 
     test('getDateTime wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('getDateTimeMillis',
+      MockDatastoreChannel.mockMethodError('getDateTime',
           errorMessage: 'fail');
       final e = await _expectException(() => datastore.getDateTime('k'));
       expect(e.message, contains('getDateTime'));
@@ -601,7 +601,7 @@ void main() {
     });
 
     test('setDateTime wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('setDateTimeMillis',
+      MockDatastoreChannel.mockMethodError('setDateTime',
           errorMessage: 'fail');
       final e = await _expectException(
           () => datastore.setDateTime('k', DateTime.now()));
@@ -610,7 +610,7 @@ void main() {
     });
 
     test('getMap wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('getJsonMap',
+      MockDatastoreChannel.mockMethodError('getMap',
           errorMessage: 'fail');
       final e = await _expectException(() => datastore.getMap('k'));
       expect(e.message, contains('getMap'));
@@ -618,7 +618,7 @@ void main() {
     });
 
     test('setMap wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('setJsonMap',
+      MockDatastoreChannel.mockMethodError('setMap',
           errorMessage: 'fail');
       final e = await _expectException(
           () => datastore.setMap('k', {'a': 1}));
@@ -627,7 +627,7 @@ void main() {
     });
 
     test('getMap wraps corrupt JSON as NativeDatastoreException', () async {
-      MockDatastoreChannel.mockMethod('getJsonMap', 'not valid json');
+      MockDatastoreChannel.mockMethod('getMap', 'not valid json');
       final e = await _expectException(() => datastore.getMap('k'));
       expect(e.message, contains('getMap'));
       expect(e.cause, isA<FormatException>());
@@ -635,19 +635,34 @@ void main() {
 
     test('getMap wraps non-object JSON as NativeDatastoreException', () async {
       // Top-level JSON array can't be cast to Map<String, dynamic>.
-      MockDatastoreChannel.mockMethod('getJsonMap', '[1,2,3]');
+      MockDatastoreChannel.mockMethod('getMap', '[1,2,3]');
       final e = await _expectException(() => datastore.getMap('k'));
       expect(e.message, contains('getMap'));
     });
 
     test('setMap wraps non-encodable value as NativeDatastoreException',
         () async {
-      MockDatastoreChannel.mockMethod('setJsonMap', null);
+      MockDatastoreChannel.mockMethod('setMap', null);
       // A Dart object that jsonEncode can't serialize.
       final e = await _expectException(
         () => datastore.setMap('k', {'bad': Object()}),
       );
       expect(e.message, contains('setMap'));
+    });
+
+    test('setBytes rejects payloads over 1 MiB', () async {
+      // Just over 1 MiB; should be rejected without touching the channel.
+      final tooLarge = Uint8List(1024 * 1024 + 1);
+      final e =
+          await _expectException(() => datastore.setBytes('k', tooLarge));
+      expect(e.message, contains('too large'));
+    });
+
+    test('setMap rejects encoded JSON over 1 MiB', () async {
+      MockDatastoreChannel.mockMethod('setMap', null);
+      final huge = {'x': 'a' * (1024 * 1024 + 1)};
+      final e = await _expectException(() => datastore.setMap('k', huge));
+      expect(e.message, contains('too large'));
     });
   });
 

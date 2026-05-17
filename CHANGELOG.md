@@ -1,3 +1,35 @@
+## 1.3.0
+
+* **Breaking — `clear()` now returns `Future<void>`** instead of `Future<bool>`. The previous
+  `bool` was always `true` on success; callers awaiting the result need no change beyond removing
+  any comparison against the return value.
+* **iOS plugin lifetime hardening:** added `detachFromEngine(for:)` + `registrar.publish(...)` so
+  the `FlutterBinaryMessenger` releases the Pigeon dispatcher (and the plugin instance it captures)
+  when the engine is torn down. Prevents stale instances under hot-restart and `FlutterEngineGroup`.
+* **iOS retain-extension fix:** every queue dispatch now uses `[weak self]` via a new internal
+  `onQueue<T>` helper. A teardown mid-flight short-circuits with a `plugin-detached` error instead
+  of pinning the plugin alive for the duration of the serial-queue backlog.
+* **Android cancellation-race fix:** `launchOnAttached` (formerly `launchSafe`) now guarantees the
+  Pigeon callback fires exactly once, even when the coroutine scope is cancelled *before* the body
+  runs. Previously such a race could leave the Dart-side `Future` hanging in `BinaryMessenger`'s
+  pending-replies map until the engine itself was destroyed.
+* **Bounded payloads:** `setBytes` and `setMap` now reject values larger than 1 MiB with a clear
+  `NativeDatastoreException`. UserDefaults and DataStore are designed for small preferences; use a
+  database or the filesystem for bulk binary storage.
+* **Internal refactor (no behavior change):**
+  - Centralized bucket prefixes (`__list__:`, `__bytes__:`, `__datetime__:`, `__map__:`) as named
+    constants per language with a clear sync comment. Eliminates 30+ magic-string sites that
+    previously had to be edited in lockstep.
+  - Pigeon FFI method names match the Dart facade: `getDateTimeMillis`/`setDateTimeMillis` →
+    `getDateTime`/`setDateTime`, `getJsonMap`/`setJsonMap` → `getMap`/`setMap`. The wire encoding
+    (millis / JSON) is now an implementation detail of the host.
+  - Swift error class renamed to `NativeDatastoreError` to match Kotlin.
+  - `getAll()` documentation now explicitly enumerates the runtime-type union of returned values
+    (including `Uint8List` for bytes, raw millis-`int` for DateTime, raw JSON-`String` for Map).
+  - Renamed for clarity: Swift `prefix` → `keyNamespace`, `queue` → `serialQueue`; Kotlin
+    `launchSafe` → `launchOnAttached`.
+  - Repeated dartdoc on typed getters/setters consolidated via `{@template}`/`{@macro}`.
+
 ## 1.2.0
 
 * **Android resilience on aggressive-kill OEMs (MIUI, ColorOS, OriginOS, HyperOS, etc.):**

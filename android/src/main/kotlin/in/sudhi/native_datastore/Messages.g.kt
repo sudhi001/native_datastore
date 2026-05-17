@@ -2,7 +2,7 @@
 // See also: https://pub.dev/packages/pigeon
 @file:Suppress("UNCHECKED_CAST", "ArrayInDataClass")
 
-package `in`.sudhi.native_datastore
+package in.sudhi.native_datastore
 
 import android.util.Log
 import io.flutter.plugin.common.BasicMessageChannel
@@ -70,16 +70,16 @@ interface DatastoreApi {
   fun setDouble(key: String, value: Double, callback: (Result<Unit>) -> Unit)
   fun setStringList(key: String, value: List<String>, callback: (Result<Unit>) -> Unit)
   fun remove(key: String, callback: (Result<Boolean>) -> Unit)
-  fun clear(callback: (Result<Boolean>) -> Unit)
+  fun clear(callback: (Result<Unit>) -> Unit)
   fun getAll(callback: (Result<Map<String, Any>>) -> Unit)
   fun getKeys(callback: (Result<List<String>>) -> Unit)
   fun containsKey(key: String, callback: (Result<Boolean>) -> Unit)
   fun getBytes(key: String, callback: (Result<ByteArray?>) -> Unit)
   fun setBytes(key: String, value: ByteArray, callback: (Result<Unit>) -> Unit)
-  fun getDateTimeMillis(key: String, callback: (Result<Long?>) -> Unit)
-  fun setDateTimeMillis(key: String, value: Long, callback: (Result<Unit>) -> Unit)
-  fun getJsonMap(key: String, callback: (Result<String?>) -> Unit)
-  fun setJsonMap(key: String, value: String, callback: (Result<Unit>) -> Unit)
+  fun getDateTime(key: String, callback: (Result<Long?>) -> Unit)
+  fun setDateTime(key: String, value: Long, callback: (Result<Unit>) -> Unit)
+  fun getMap(key: String, callback: (Result<String?>) -> Unit)
+  fun setMap(key: String, value: String, callback: (Result<Unit>) -> Unit)
 
   companion object {
     /** The codec used by DatastoreApi. */
@@ -314,13 +314,12 @@ interface DatastoreApi {
         val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.clear$separatedMessageChannelSuffix", codec)
         if (api != null) {
           channel.setMessageHandler { _, reply ->
-            api.clear{ result: Result<Boolean> ->
+            api.clear{ result: Result<Unit> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(MessagesPigeonUtils.wrapError(error))
               } else {
-                val data = result.getOrNull()
-                reply.reply(MessagesPigeonUtils.wrapResult(data))
+                reply.reply(MessagesPigeonUtils.wrapResult(null))
               }
             }
           }
@@ -425,12 +424,12 @@ interface DatastoreApi {
         }
       }
       run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.getDateTimeMillis$separatedMessageChannelSuffix", codec)
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.getDateTime$separatedMessageChannelSuffix", codec)
         if (api != null) {
           channel.setMessageHandler { message, reply ->
             val args = message as List<Any?>
             val keyArg = args[0] as String
-            api.getDateTimeMillis(keyArg) { result: Result<Long?> ->
+            api.getDateTime(keyArg) { result: Result<Long?> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(MessagesPigeonUtils.wrapError(error))
@@ -445,13 +444,13 @@ interface DatastoreApi {
         }
       }
       run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.setDateTimeMillis$separatedMessageChannelSuffix", codec)
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.setDateTime$separatedMessageChannelSuffix", codec)
         if (api != null) {
           channel.setMessageHandler { message, reply ->
             val args = message as List<Any?>
             val keyArg = args[0] as String
             val valueArg = args[1] as Long
-            api.setDateTimeMillis(keyArg, valueArg) { result: Result<Unit> ->
+            api.setDateTime(keyArg, valueArg) { result: Result<Unit> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(MessagesPigeonUtils.wrapError(error))
@@ -465,12 +464,12 @@ interface DatastoreApi {
         }
       }
       run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.getJsonMap$separatedMessageChannelSuffix", codec)
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.getMap$separatedMessageChannelSuffix", codec)
         if (api != null) {
           channel.setMessageHandler { message, reply ->
             val args = message as List<Any?>
             val keyArg = args[0] as String
-            api.getJsonMap(keyArg) { result: Result<String?> ->
+            api.getMap(keyArg) { result: Result<String?> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(MessagesPigeonUtils.wrapError(error))
@@ -485,13 +484,13 @@ interface DatastoreApi {
         }
       }
       run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.setJsonMap$separatedMessageChannelSuffix", codec)
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.setMap$separatedMessageChannelSuffix", codec)
         if (api != null) {
           channel.setMessageHandler { message, reply ->
             val args = message as List<Any?>
             val keyArg = args[0] as String
             val valueArg = args[1] as String
-            api.setJsonMap(keyArg, valueArg) { result: Result<Unit> ->
+            api.setMap(keyArg, valueArg) { result: Result<Unit> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(MessagesPigeonUtils.wrapError(error))
