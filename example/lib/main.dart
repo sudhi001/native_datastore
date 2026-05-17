@@ -24,14 +24,46 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class DataStoreDemo extends StatefulWidget {
+class DataStoreDemo extends StatelessWidget {
   const DataStoreDemo({super.key});
 
   @override
-  State<DataStoreDemo> createState() => _DataStoreDemoState();
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Native DataStore Demo'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Regular', icon: Icon(Icons.storage)),
+              Tab(text: 'Secure', icon: Icon(Icons.lock)),
+            ],
+          ),
+        ),
+        body: const TabBarView(
+          children: [
+            RegularTab(),
+            SecureTab(),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _DataStoreDemoState extends State<DataStoreDemo> {
+// ---------------------------------------------------------------------------
+// Regular DataStore tab (all 8 types)
+// ---------------------------------------------------------------------------
+
+class RegularTab extends StatefulWidget {
+  const RegularTab({super.key});
+
+  @override
+  State<RegularTab> createState() => _RegularTabState();
+}
+
+class _RegularTabState extends State<RegularTab> {
   final _datastore = NativeDatastore();
   final _keyController = TextEditingController();
   final _valueController = TextEditingController();
@@ -169,9 +201,11 @@ class _DataStoreDemoState extends State<DataStoreDemo> {
     await _datastore.setInt('loginCount', 42);
     await _datastore.setDouble('rating', 4.8);
     await _datastore.setStringList('tags', ['flutter', 'dart', 'mobile']);
-    await _datastore.setBytes('token', Uint8List.fromList([0x48, 0x65, 0x6C, 0x6C, 0x6F]));
+    await _datastore
+        .setBytes('token', Uint8List.fromList([0x48, 0x65, 0x6C, 0x6C, 0x6F]));
     await _datastore.setDateTime('lastLogin', DateTime.now());
-    await _datastore.setMap('profile', {'name': 'sudhi', 'level': 5, 'active': true});
+    await _datastore
+        .setMap('profile', {'name': 'sudhi', 'level': 5, 'active': true});
     _showMessage('Saved sample data for all 8 types');
     await _loadAll();
   }
@@ -203,92 +237,330 @@ class _DataStoreDemoState extends State<DataStoreDemo> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Native DataStore Demo')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _keyController,
-              decoration: const InputDecoration(
-                labelText: 'Key',
-                border: OutlineInputBorder(),
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _keyController,
+            decoration: const InputDecoration(
+              labelText: 'Key',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _valueController,
+                  decoration: InputDecoration(
+                    labelText: 'Value',
+                    hintText: _valueHint,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              DropdownButton<String>(
+                value: _selectedType,
+                items: _types
+                    .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                    .toList(),
+                onChanged: (v) => setState(() => _selectedType = v!),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton(
+                onPressed: _setValue,
+                child: Text('Set $_selectedType'),
+              ),
+              OutlinedButton(
+                onPressed: _getValue,
+                child: Text('Get $_selectedType'),
+              ),
+              OutlinedButton(
+                onPressed: _loadAll,
+                child: const Text('Get All'),
+              ),
+              FilledButton.tonal(
+                onPressed: _remove,
+                child: const Text('Remove'),
+              ),
+              FilledButton.tonal(
+                onPressed: _clearAll,
+                child: const Text('Clear All'),
+              ),
+              FilledButton(
+                onPressed: _setSampleData,
+                child: const Text('Set All Types'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          const Text('Stored Data:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SingleChildScrollView(
+                child: Text(_output, style: const TextStyle(fontSize: 14)),
               ),
             ),
-            const SizedBox(height: 8),
-            Row(
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Secure DataStore tab (Keychain / AndroidKeyStore-backed)
+// ---------------------------------------------------------------------------
+
+class SecureTab extends StatefulWidget {
+  const SecureTab({super.key});
+
+  @override
+  State<SecureTab> createState() => _SecureTabState();
+}
+
+class _SecureTabState extends State<SecureTab> {
+  final _secure = SecureDatastore();
+  final _keyController = TextEditingController();
+  final _valueController = TextEditingController();
+  String _output = 'No secure data yet';
+  String _selectedType = 'String';
+
+  final _types = ['String', 'Bytes'];
+
+  @override
+  void dispose() {
+    _keyController.dispose();
+    _valueController.dispose();
+    super.dispose();
+  }
+
+  String get _valueHint {
+    return _selectedType == 'Bytes'
+        ? 'comma-separated bytes, e.g. 0,1,255'
+        : 'e.g. eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...';
+  }
+
+  Future<void> _setValue() async {
+    final key = _keyController.text.trim();
+    final raw = _valueController.text.trim();
+    if (key.isEmpty || raw.isEmpty) return;
+
+    try {
+      if (_selectedType == 'String') {
+        await _secure.setString(key, raw);
+        _showMessage('Saved secure String "$key"');
+      } else {
+        final val = Uint8List.fromList(
+          raw.split(',').map((s) => int.parse(s.trim())).toList(),
+        );
+        await _secure.setBytes(key, val);
+        _showMessage('Saved secure Bytes "$key" (${val.length} bytes)');
+      }
+    } on FormatException {
+      _showMessage('Invalid $_selectedType value: "$raw"');
+      return;
+    } on NativeDatastoreException catch (e) {
+      _showMessage(e.message);
+      return;
+    }
+    await _refreshKeys();
+  }
+
+  Future<void> _getValue() async {
+    final key = _keyController.text.trim();
+    if (key.isEmpty) return;
+    try {
+      if (_selectedType == 'String') {
+        final value = await _secure.getString(key);
+        _showMessage('$key (String) = ${value ?? "(not found)"}');
+      } else {
+        final value = await _secure.getBytes(key);
+        _showMessage(value == null
+            ? '$key (Bytes) = (not found)'
+            : '$key (Bytes) = ${value.toList()}');
+      }
+    } on NativeDatastoreException catch (e) {
+      _showMessage(e.message);
+    }
+  }
+
+  Future<void> _remove() async {
+    final key = _keyController.text.trim();
+    if (key.isEmpty) return;
+    final removed = await _secure.remove(key);
+    _showMessage(removed ? 'Removed "$key"' : '"$key" not found');
+    await _refreshKeys();
+  }
+
+  Future<void> _clearAll() async {
+    await _secure.clear();
+    _showMessage('Cleared all secure data');
+    await _refreshKeys();
+  }
+
+  Future<void> _setSampleData() async {
+    await _secure.clear();
+    await _secure.setString(
+      'refresh_token',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.fake.signature',
+    );
+    await _secure.setString('api_secret', 'sk_live_demo_abc123');
+    await _secure.setBytes(
+      'symmetric_key',
+      Uint8List.fromList(List.generate(32, (i) => i)),
+    );
+    _showMessage('Saved sample secrets');
+    await _refreshKeys();
+  }
+
+  Future<void> _refreshKeys() async {
+    try {
+      final keys = await _secure.getKeys();
+      setState(() {
+        _output = keys.isEmpty
+            ? 'Secure store is empty'
+            : 'Stored keys (values are encrypted at rest):\n'
+                '${keys.map((k) => '  - $k').join('\n')}';
+      });
+    } on NativeDatastoreException catch (e) {
+      setState(() => _output = 'Error: ${e.message}');
+    }
+  }
+
+  void _showMessage(String msg) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
               children: [
+                Icon(Icons.shield_outlined,
+                    color: Theme.of(context).colorScheme.onSecondaryContainer),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: TextField(
-                    controller: _valueController,
-                    decoration: InputDecoration(
-                      labelText: 'Value',
-                      hintText: _valueHint,
-                      border: const OutlineInputBorder(),
+                  child: Text(
+                    'iOS Keychain (afterFirstUnlock) · Android Keystore + AES-256-GCM',
+                    style: TextStyle(
+                      color:
+                          Theme.of(context).colorScheme.onSecondaryContainer,
+                      fontSize: 13,
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                DropdownButton<String>(
-                  value: _selectedType,
-                  items: _types
-                      .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                      .toList(),
-                  onChanged: (v) => setState(() => _selectedType = v!),
-                ),
               ],
             ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton(
-                  onPressed: _setValue,
-                  child: Text('Set $_selectedType'),
-                ),
-                OutlinedButton(
-                  onPressed: _getValue,
-                  child: Text('Get $_selectedType'),
-                ),
-                OutlinedButton(
-                  onPressed: _loadAll,
-                  child: const Text('Get All'),
-                ),
-                FilledButton.tonal(
-                  onPressed: _remove,
-                  child: const Text('Remove'),
-                ),
-                FilledButton.tonal(
-                  onPressed: _clearAll,
-                  child: const Text('Clear All'),
-                ),
-                FilledButton(
-                  onPressed: _setSampleData,
-                  child: const Text('Set All Types'),
-                ),
-              ],
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _keyController,
+            decoration: const InputDecoration(
+              labelText: 'Key',
+              border: OutlineInputBorder(),
             ),
-            const SizedBox(height: 24),
-            const Text('Stored Data:',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 8),
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: SingleChildScrollView(
-                  child: Text(_output, style: const TextStyle(fontSize: 14)),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _valueController,
+                  decoration: InputDecoration(
+                    labelText: 'Value',
+                    hintText: _valueHint,
+                    border: const OutlineInputBorder(),
+                  ),
                 ),
               ),
+              const SizedBox(width: 8),
+              DropdownButton<String>(
+                value: _selectedType,
+                items: _types
+                    .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                    .toList(),
+                onChanged: (v) => setState(() => _selectedType = v!),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton(
+                onPressed: _setValue,
+                child: Text('Set $_selectedType'),
+              ),
+              OutlinedButton(
+                onPressed: _getValue,
+                child: Text('Get $_selectedType'),
+              ),
+              OutlinedButton(
+                onPressed: _refreshKeys,
+                child: const Text('Refresh Keys'),
+              ),
+              FilledButton.tonal(
+                onPressed: _remove,
+                child: const Text('Remove'),
+              ),
+              FilledButton.tonal(
+                onPressed: _clearAll,
+                child: const Text('Clear All'),
+              ),
+              FilledButton(
+                onPressed: _setSampleData,
+                child: const Text('Save Sample Secrets'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          const Text('Stored Secure Keys:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SingleChildScrollView(
+                child: Text(_output, style: const TextStyle(fontSize: 14)),
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

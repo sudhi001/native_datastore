@@ -1,5 +1,15 @@
 ## 1.3.0
 
+* **New: `SecureDatastore` for encrypted-at-rest storage.** A separate class
+  (`SecureDatastore()`) backed by **Keychain Services** on iOS
+  (`kSecClassGenericPassword`, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`)
+  and **AndroidKeyStore-backed AES-256-GCM** over a dedicated DataStore file on
+  Android (hardware-backed key where available, fresh 96-bit IV per write).
+  Surface: `setString`/`getString`, `setBytes`/`getBytes`, plus
+  `remove`/`clear`/`getKeys`/`containsKey`. Values are capped at 1 MiB. Android
+  requires API 23 (Marshmallow) or higher; older devices receive a clear
+  `UnsupportedOperationException` from the secure API only — the regular
+  `NativeDatastore` still works.
 * **Breaking — `clear()` now returns `Future<void>`** instead of `Future<bool>`. The previous
   `bool` was always `true` on success; callers awaiting the result need no change beyond removing
   any comparison against the return value.

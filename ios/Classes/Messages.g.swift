@@ -478,3 +478,162 @@ class DatastoreApiSetup {
     }
   }
 }
+/// Secure-storage host API. Implementations encrypt data at rest using
+/// platform key management (Keychain on iOS, AndroidKeyStore-backed AES-GCM
+/// over DataStore on Android). Only string and bytes are supported — callers
+/// that need richer types should serialize first.
+///
+/// Generated protocol from Pigeon that represents a handler of messages from Flutter.
+protocol SecureDatastoreApi {
+  func getString(key: String, completion: @escaping (Result<String?, Error>) -> Void)
+  func setString(key: String, value: String, completion: @escaping (Result<Void, Error>) -> Void)
+  func getBytes(key: String, completion: @escaping (Result<FlutterStandardTypedData?, Error>) -> Void)
+  func setBytes(key: String, value: FlutterStandardTypedData, completion: @escaping (Result<Void, Error>) -> Void)
+  func remove(key: String, completion: @escaping (Result<Bool, Error>) -> Void)
+  func clear(completion: @escaping (Result<Void, Error>) -> Void)
+  func getKeys(completion: @escaping (Result<[String], Error>) -> Void)
+  func containsKey(key: String, completion: @escaping (Result<Bool, Error>) -> Void)
+}
+
+/// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
+class SecureDatastoreApiSetup {
+  static var codec: FlutterStandardMessageCodec { MessagesPigeonCodec.shared }
+  /// Sets up an instance of `SecureDatastoreApi` to handle messages through the `binaryMessenger`.
+  static func setUp(binaryMessenger: FlutterBinaryMessenger, api: SecureDatastoreApi?, messageChannelSuffix: String = "") {
+    let channelSuffix = messageChannelSuffix.count > 0 ? ".\(messageChannelSuffix)" : ""
+    let getStringChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.SecureDatastoreApi.getString\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      getStringChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        api.getString(key: keyArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      getStringChannel.setMessageHandler(nil)
+    }
+    let setStringChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.SecureDatastoreApi.setString\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setStringChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        let valueArg = args[1] as! String
+        api.setString(key: keyArg, value: valueArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      setStringChannel.setMessageHandler(nil)
+    }
+    let getBytesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.SecureDatastoreApi.getBytes\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      getBytesChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        api.getBytes(key: keyArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      getBytesChannel.setMessageHandler(nil)
+    }
+    let setBytesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.SecureDatastoreApi.setBytes\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setBytesChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        let valueArg = args[1] as! FlutterStandardTypedData
+        api.setBytes(key: keyArg, value: valueArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      setBytesChannel.setMessageHandler(nil)
+    }
+    let removeChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.SecureDatastoreApi.remove\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      removeChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        api.remove(key: keyArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      removeChannel.setMessageHandler(nil)
+    }
+    let clearChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.SecureDatastoreApi.clear\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      clearChannel.setMessageHandler { _, reply in
+        api.clear { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      clearChannel.setMessageHandler(nil)
+    }
+    let getKeysChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.SecureDatastoreApi.getKeys\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      getKeysChannel.setMessageHandler { _, reply in
+        api.getKeys { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      getKeysChannel.setMessageHandler(nil)
+    }
+    let containsKeyChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.SecureDatastoreApi.containsKey\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      containsKeyChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        api.containsKey(key: keyArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      containsKeyChannel.setMessageHandler(nil)
+    }
+  }
+}

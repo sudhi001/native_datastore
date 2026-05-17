@@ -20,16 +20,26 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     /// Serial queue for all datastore operations to prevent race conditions.
     private let serialQueue = DispatchQueue(label: "native_datastore.serial")
 
+    // Held strongly so the Pigeon handler closure isn't the only owner — gives
+    // a deterministic place to nil it during teardown.
+    private var secureInstance: SecureDatastorePlugin?
+
     public static func register(with registrar: FlutterPluginRegistrar) {
         let instance = NativeDatastorePlugin()
         registrar.publish(instance)
         DatastoreApiSetup.setUp(binaryMessenger: registrar.messenger(), api: instance)
+        let secure = SecureDatastorePlugin()
+        instance.secureInstance = secure
+        SecureDatastoreApiSetup.setUp(binaryMessenger: registrar.messenger(), api: secure)
     }
 
     public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
-        // Drop the Pigeon dispatcher so the messenger stops retaining `self`
-        // (and the closures it captures) after the engine goes away.
+        // Drop both Pigeon dispatchers so the messenger stops retaining the
+        // plugin instances (and the closures they capture) after the engine
+        // goes away.
         DatastoreApiSetup.setUp(binaryMessenger: registrar.messenger(), api: nil)
+        SecureDatastoreApiSetup.setUp(binaryMessenger: registrar.messenger(), api: nil)
+        secureInstance = nil
     }
 
     private func scalarKey(_ key: String) -> String { keyNamespace + key }

@@ -24,3 +24,4 @@
 library;
 
 export 'src/native_datastore_plugin.dart';
+export 'src/secure_datastore.dart';

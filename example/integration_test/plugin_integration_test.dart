@@ -99,4 +99,45 @@ void main() {
     final all = await datastore.getAll();
     expect(all, isEmpty);
   });
+
+  testWidgets('SecureDatastore basic operations', (WidgetTester tester) async {
+    final secure = SecureDatastore();
+
+    await secure.clear();
+
+    // String round-trip
+    await secure.setString('refresh_token', 'jwt.payload.signature');
+    expect(await secure.getString('refresh_token'), 'jwt.payload.signature');
+
+    // Bytes round-trip
+    final key = Uint8List.fromList(List.generate(32, (i) => i));
+    await secure.setBytes('symmetric_key', key);
+    expect(await secure.getBytes('symmetric_key'), key);
+
+    // String and bytes under the same user-key are independent buckets
+    await secure.setString('mixed', 'as-string');
+    await secure.setBytes('mixed', Uint8List.fromList([9, 9, 9]));
+    expect(await secure.getString('mixed'), 'as-string');
+    expect(await secure.getBytes('mixed'), Uint8List.fromList([9, 9, 9]));
+
+    // Missing keys return null
+    expect(await secure.getString('nonexistent'), isNull);
+    expect(await secure.getBytes('nonexistent'), isNull);
+
+    // containsKey / getKeys
+    expect(await secure.containsKey('refresh_token'), true);
+    expect(await secure.containsKey('nonexistent'), false);
+    final keys = await secure.getKeys();
+    expect(keys, containsAll(['refresh_token', 'symmetric_key', 'mixed']));
+
+    // remove deletes both buckets for the same user-key
+    expect(await secure.remove('mixed'), true);
+    expect(await secure.getString('mixed'), isNull);
+    expect(await secure.getBytes('mixed'), isNull);
+    expect(await secure.remove('nonexistent'), false);
+
+    // clear wipes everything
+    await secure.clear();
+    expect(await secure.getKeys(), isEmpty);
+  });
 }

@@ -82,3 +82,34 @@ abstract class DatastoreApi {
   @async
   void setMap(String key, String value);
 }
+
+/// Secure-storage host API. Implementations encrypt data at rest using
+/// platform key management (Keychain on iOS, AndroidKeyStore-backed AES-GCM
+/// over DataStore on Android). Only string and bytes are supported — callers
+/// that need richer types should serialize first.
+@HostApi()
+abstract class SecureDatastoreApi {
+  @async
+  String? getString(String key);
+
+  @async
+  void setString(String key, String value);
+
+  @async
+  Uint8List? getBytes(String key);
+
+  @async
+  void setBytes(String key, Uint8List value);
+
+  @async
+  bool remove(String key);
+
+  @async
+  void clear();
+
+  @async
+  List<String> getKeys();
+
+  @async
+  bool containsKey(String key);
+}

@@ -217,6 +217,45 @@ if (await datastore.containsKey('profile')) {
 
 ---
 
+## Secure Storage
+
+For secrets (auth tokens, refresh tokens, encryption keys) use the
+`SecureDatastore` class, which encrypts values at rest using platform key
+management:
+
+- **iOS** — Keychain Services (`kSecClassGenericPassword`) with
+  `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. Values are readable after
+  the first device unlock following a boot (including from background work),
+  never migrated to a new device or restored from backup.
+- **Android** — AES-256-GCM with a key minted in the AndroidKeyStore
+  (hardware-backed where the device supports it), encrypting values into a
+  dedicated DataStore file. Each write uses a fresh 96-bit IV. Requires
+  Android API 23 (Marshmallow) or higher; older devices throw
+  `UnsupportedOperationException` from the secure API.
+
+```dart
+import 'package:native_datastore/native_datastore.dart';
+
+final secure = SecureDatastore();
+
+await secure.setString('refresh_token', tokenJwt);
+final token = await secure.getString('refresh_token');
+
+await secure.setBytes('symmetric_key', encryptionKey);
+final key = await secure.getBytes('symmetric_key');
+
+await secure.remove('refresh_token');
+await secure.clear(); // wipes every value in the secure store
+```
+
+Surface is intentionally minimal: `String` and `Uint8List` only, plus
+`remove` / `clear` / `getKeys` / `containsKey`. Values are capped at 1 MiB —
+callers needing larger payloads should encrypt themselves and store via the
+filesystem. Errors flow through the same `NativeDatastoreException` used by
+`NativeDatastore`.
+
+---
+
 ## Storage Details
 
 Understanding how each type is stored on each platform:

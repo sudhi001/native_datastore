@@ -737,6 +737,191 @@ void main() {
       expect(api.pigeonVar_messageChannelSuffix, '');
     });
   });
+
+  // -------------------------------------------------------
+  // SecureDatastore
+  // -------------------------------------------------------
+  group('SecureDatastore', () {
+    const secureChannelPrefix =
+        'dev.flutter.pigeon.native_datastore.SecureDatastoreApi.';
+    const codec = StandardMessageCodec();
+
+    void mockSecure(String method, Object? result) {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMessageHandler(
+        '$secureChannelPrefix$method',
+        (ByteData? message) async => codec.encodeMessage(<Object?>[result]),
+      );
+    }
+
+    void mockSecureError(String method, {String code = 'test-error', String? errorMessage}) {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMessageHandler(
+        '$secureChannelPrefix$method',
+        (ByteData? message) async =>
+            codec.encodeMessage(<Object?>[code, errorMessage, null]),
+      );
+    }
+
+    late SecureDatastore secure;
+
+    setUp(() {
+      secure = SecureDatastore();
+    });
+
+    tearDown(() {
+      for (final method in [
+        'getString',
+        'setString',
+        'getBytes',
+        'setBytes',
+        'remove',
+        'clear',
+        'getKeys',
+        'containsKey',
+      ]) {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMessageHandler('$secureChannelPrefix$method', null);
+      }
+    });
+
+    test('getString throws on empty key', () {
+      expect(
+        () => secure.getString(''),
+        throwsA(isA<NativeDatastoreException>()),
+      );
+    });
+
+    test('setString throws on empty key', () {
+      expect(
+        () => secure.setString('', 'v'),
+        throwsA(isA<NativeDatastoreException>()),
+      );
+    });
+
+    test('getBytes throws on empty key', () {
+      expect(
+        () => secure.getBytes(''),
+        throwsA(isA<NativeDatastoreException>()),
+      );
+    });
+
+    test('setBytes throws on empty key', () {
+      expect(
+        () => secure.setBytes('', Uint8List(0)),
+        throwsA(isA<NativeDatastoreException>()),
+      );
+    });
+
+    test('remove throws on empty key', () {
+      expect(
+        () => secure.remove(''),
+        throwsA(isA<NativeDatastoreException>()),
+      );
+    });
+
+    test('containsKey throws on empty key', () {
+      expect(
+        () => secure.containsKey(''),
+        throwsA(isA<NativeDatastoreException>()),
+      );
+    });
+
+    test('rejects keys starting with reserved __str__ prefix', () {
+      expect(
+        () => secure.setString('__str__:foo', 'v'),
+        throwsA(isA<NativeDatastoreException>().having(
+          (e) => e.message,
+          'message',
+          contains('reserved prefix'),
+        )),
+      );
+    });
+
+    test('rejects keys starting with reserved __bytes__ prefix', () {
+      expect(
+        () => secure.getBytes('__bytes__:foo'),
+        throwsA(isA<NativeDatastoreException>()),
+      );
+    });
+
+    test('getString returns value', () async {
+      mockSecure('getString', 'secret-token');
+      expect(await secure.getString('k'), 'secret-token');
+    });
+
+    test('getString returns null for missing key', () async {
+      mockSecure('getString', null);
+      expect(await secure.getString('k'), isNull);
+    });
+
+    test('setString completes', () async {
+      mockSecure('setString', null);
+      await secure.setString('k', 'v');
+    });
+
+    test('getBytes returns value', () async {
+      mockSecure('getBytes', Uint8List.fromList([1, 2, 3]));
+      expect(await secure.getBytes('k'), Uint8List.fromList([1, 2, 3]));
+    });
+
+    test('getBytes returns null for missing key', () async {
+      mockSecure('getBytes', null);
+      expect(await secure.getBytes('k'), isNull);
+    });
+
+    test('setBytes completes', () async {
+      mockSecure('setBytes', null);
+      await secure.setBytes('k', Uint8List.fromList([1, 2]));
+    });
+
+    test('remove returns bool', () async {
+      mockSecure('remove', true);
+      expect(await secure.remove('k'), true);
+    });
+
+    test('clear completes', () async {
+      mockSecure('clear', null);
+      await secure.clear();
+    });
+
+    test('getKeys returns list', () async {
+      mockSecure('getKeys', ['a', 'b']);
+      expect(await secure.getKeys(), ['a', 'b']);
+    });
+
+    test('containsKey returns bool', () async {
+      mockSecure('containsKey', false);
+      expect(await secure.containsKey('k'), false);
+    });
+
+    test('getString wraps PlatformException', () async {
+      mockSecureError('getString', errorMessage: 'keychain denied');
+      final e = await _expectException(() => secure.getString('k'));
+      expect(e.message, contains('secure getString'));
+      expect(e.cause, isA<PlatformException>());
+    });
+
+    test('setString rejects payloads over 1 MiB', () async {
+      final e = await _expectException(
+        () => secure.setString('k', 'a' * (1024 * 1024 + 1)),
+      );
+      expect(e.message, contains('too large'));
+    });
+
+    test('setBytes rejects payloads over 1 MiB', () async {
+      final tooLarge = Uint8List(1024 * 1024 + 1);
+      final e =
+          await _expectException(() => secure.setBytes('k', tooLarge));
+      expect(e.message, contains('too large'));
+    });
+
+    test('withApi constructor uses injected api', () async {
+      mockSecure('getString', 'injected-secret');
+      final s = SecureDatastore.withApi(SecureDatastoreApi());
+      expect(await s.getString('k'), 'injected-secret');
+    });
+  });
 }
 
 /// Helper that expects a [NativeDatastoreException] to be thrown.

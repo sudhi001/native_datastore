@@ -58,10 +58,19 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
     @Volatile
     private var scope: CoroutineScope? = null
 
+    // Held strongly so the Pigeon handler closure isn't the only owner — gives
+    // a deterministic place to drop it during teardown.
+    private var securePlugin: SecureDatastorePlugin? = null
+
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        context = binding.applicationContext
-        scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        val ctx = binding.applicationContext
+        val sc = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        context = ctx
+        scope = sc
         DatastoreApi.setUp(binding.binaryMessenger, this)
+        val secure = SecureDatastorePlugin(ctx, sc)
+        securePlugin = secure
+        SecureDatastoreApi.setUp(binding.binaryMessenger, secure)
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -69,6 +78,8 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
         // cancellation before we tear down the Pigeon channel they would reply on.
         scope?.cancel()
         DatastoreApi.setUp(binding.binaryMessenger, null)
+        SecureDatastoreApi.setUp(binding.binaryMessenger, null)
+        securePlugin = null
         scope = null
         context = null
     }
