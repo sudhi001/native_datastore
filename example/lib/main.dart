@@ -24,29 +24,44 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class DataStoreDemo extends StatelessWidget {
+class DataStoreDemo extends StatefulWidget {
   const DataStoreDemo({super.key});
 
   @override
+  State<DataStoreDemo> createState() => _DataStoreDemoState();
+}
+
+class _DataStoreDemoState extends State<DataStoreDemo> {
+  int _index = 0;
+
+  static const _titles = ['Regular Storage', 'Secure Storage'];
+
+  @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Native DataStore Demo'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Regular', icon: Icon(Icons.storage)),
-              Tab(text: 'Secure', icon: Icon(Icons.lock)),
-            ],
+    return Scaffold(
+      appBar: AppBar(title: Text(_titles[_index])),
+      body: IndexedStack(
+        index: _index,
+        children: const [
+          RegularTab(),
+          SecureTab(),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _index,
+        onDestinationSelected: (i) => setState(() => _index = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.storage_outlined),
+            selectedIcon: Icon(Icons.storage),
+            label: 'Regular',
           ),
-        ),
-        body: const TabBarView(
-          children: [
-            RegularTab(),
-            SecureTab(),
-          ],
-        ),
+          NavigationDestination(
+            icon: Icon(Icons.lock_outline),
+            selectedIcon: Icon(Icons.lock),
+            label: 'Secure',
+          ),
+        ],
       ),
     );
   }
@@ -237,7 +252,7 @@ class _RegularTabState extends State<RegularTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -307,8 +322,10 @@ class _RegularTabState extends State<RegularTab> {
           const Text('Stored Data:',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 8),
-          Expanded(
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 160, maxHeight: 360),
             child: Container(
+              width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -453,7 +470,7 @@ class _SecureTabState extends State<SecureTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -548,8 +565,10 @@ class _SecureTabState extends State<SecureTab> {
           const Text('Stored Secure Keys:',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 8),
-          Expanded(
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 160, maxHeight: 360),
             child: Container(
+              width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceContainerLow,
