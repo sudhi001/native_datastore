@@ -1,3 +1,10 @@
+## 1.5.1
+
+* Documentation only — no code or API changes. Expanded the README to help
+  developers get started faster: three animated diagrams (architecture, reactive
+  `watch`, and "your data survives app restarts"), a quick-reference **cheat
+  sheet**, a **"which method should I use?"** decision table, and an **FAQ**.
+
 ## 1.5.0
 
 Feature release bringing the plugin to parity with Jetpack DataStore's core
