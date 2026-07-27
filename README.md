@@ -47,17 +47,20 @@ a database like [`sqflite`](https://pub.dev/packages/sqflite),
 - [Supported Types](#supported-types)
 - [Why not SharedPreferences?](#why-not-sharedpreferences)
 - [Getting Started](#getting-started) — install and your first read/write
+- [Cheat Sheet](#cheat-sheet) — the whole API at a glance
 - [Full Example](#full-example) — a complete, copy-paste app
 - [Error Handling](#error-handling)
 - [Handling Null Values](#handling-null-values)
 - [API Reference](#api-reference)
 - [Reactive Observation (`watch`)](#reactive-observation-watch) — rebuild on change
 - [Atomic Operations](#atomic-operations) — counters, flags, compare-and-set
+- [Which method should I use?](#which-method-should-i-use) — quick decision guide
 - [🔒 Secure Storage](#-secure-storage) — for tokens and secrets
 - [Storage Details](#storage-details)
 - [Migrating from shared_preferences](#migrating-from-shared_preferences)
 - [Platform Details](#platform-details)
 - [Requirements](#requirements)
+- [FAQ](#faq) — common questions & gotchas
 - [Advanced Topics](#advanced-topics) — resilience & multi-process caveats (safe to skip at first)
 - [Contributing](#contributing)
 
@@ -187,7 +190,55 @@ await datastore.clear();              // Remove all data
 
 ---
 
+## Cheat Sheet
+
+The whole API at a glance — copy, paste, adapt:
+
+```dart
+final ds = NativeDatastore();
+
+// ── Write / read (8 types; getters return null if the key is absent) ──
+await ds.setString('name', 'sudhi');
+final name = await ds.getString('name');          // 'sudhi'
+await ds.setBool('dark', true);
+await ds.setInt('count', 42);
+await ds.setDouble('rating', 4.8);
+await ds.setStringList('tags', ['a', 'b']);
+await ds.setBytes('avatar', bytes);               // Uint8List, ≤ 1 MiB
+await ds.setDateTime('lastSeen', DateTime.now()); // stored as UTC
+await ds.setMap('profile', {'level': 5});         // JSON-able map
+
+// ── Observe changes as a Stream (auto-rebuild your UI) ──
+ds.watchInt('count').listen((v) => print('count = $v'));
+
+// ── Atomic updates (safe under concurrency — no lost writes) ──
+await ds.incrementInt('count');                   // +1, returns the new value
+await ds.decrementInt('lives');                   // -1
+await ds.toggleBool('dark');
+await ds.compareAndSetString('status',
+    expected: 'pending', value: 'done');          // swaps only if it matched
+
+// ── Query / delete ──
+await ds.containsKey('name');                     // bool
+await ds.getKeys();                               // List<String>
+await ds.getAll();                                // Map<String, Object>
+await ds.remove('name');
+await ds.clear();
+
+// ── One-time import from the shared_preferences package ──
+await ds.migrateFromSharedPreferences();
+
+// ── Secrets — encrypted at rest (Keychain / AndroidKeyStore) ──
+final secure = SecureDatastore();
+await secure.setString('token', jwt);
+final token = await secure.getString('token');
+```
+
+---
+
 ## Full Example
+
+![Save a value, fully close the app, reopen it, and the value is still there — read back from on-device disk](https://raw.githubusercontent.com/sudhi001/native_datastore/main/doc/assets/survives-restart.gif)
 
 A complete, runnable app you can paste into `lib/main.dart`. It saves a counter that
 **survives app restarts** — close the app fully, reopen it, and the number is still there.
@@ -408,6 +459,24 @@ final ok = await datastore.compareAndSetString(
 Available: `incrementInt`, `decrementInt`, `incrementDouble`, `toggleBool`, and
 `compareAndSetString` / `compareAndSetInt` / `compareAndSetDouble` /
 `compareAndSetBool`.
+
+---
+
+## Which method should I use?
+
+| I want to… | Use |
+|------------|-----|
+| Read a value once | `getString` / `getInt` / `getBool` / … |
+| React to changes and rebuild my UI | `watchString` / `watchInt` / … (a `Stream`) |
+| Overwrite a value | `setString` / `setInt` / … |
+| Safely add to a number (counter) | `incrementInt` / `decrementInt` / `incrementDouble` |
+| Safely flip a flag | `toggleBool` |
+| Write only if the value hasn't changed | `compareAndSet{String,Int,Double,Bool}` |
+| Store a **secret** (token, password, key) | **`SecureDatastore`** — encrypted at rest |
+| Store settings, flags, small values | **`NativeDatastore`** — fast, *not* encrypted |
+| Store large blobs or queryable records | ❌ not this — use a database (`sqflite`, `drift`, `isar`) |
+| Share data across processes / an app extension | `configure(multiProcess: …)` / `configure(appGroupId: …)` |
+| Move off the `shared_preferences` package | `migrateFromSharedPreferences()` once at startup |
 
 ---
 
@@ -638,6 +707,49 @@ The library is lightweight with a minimal footprint:
 - ~39% is hand-written plugin logic (~300 lines per platform)
 - Total source size: **~87 KB** across 7 files
 - No external dependencies beyond Flutter SDK and platform-native APIs
+
+---
+
+## FAQ
+
+**Do I need to initialize it?**
+No. Just `final ds = NativeDatastore();` and start calling — there's no
+`getInstance()`, no `await` setup, nothing to add to `main()`.
+
+**What does a getter return if the key doesn't exist?**
+`null`. Use `?? defaultValue` or check with `containsKey`.
+
+**Why is everything `async` / `Future`-based?**
+Reads and writes touch disk. Doing that asynchronously keeps work off the UI
+thread, so your app never janks or triggers an ANR. Even a `watch*` stream
+delivers its first value asynchronously.
+
+**Is it safe to write the same key from many places at once?**
+Writes are serialized natively, so they don't corrupt each other. For
+read-then-write logic (like a counter) use the **atomic** methods
+(`incrementInt`, `compareAndSet*`) so a concurrent update is never lost.
+
+**How much can I store?**
+Small values only — this is for preferences, not bulk data. `setBytes` and
+`setMap` reject payloads over **1 MiB**. For anything large or queryable, use a
+database.
+
+**Is my data encrypted?**
+`NativeDatastore` is **not** encrypted (it's plain UserDefaults / DataStore).
+For secrets use [`SecureDatastore`](#-secure-storage) — Keychain on iOS,
+AndroidKeyStore-backed AES-256-GCM on Android.
+
+**Does it work from a background isolate or a second process?**
+Use it from the main isolate/process by default. For a separate process (a
+background service, or an iOS app extension), opt in with
+`configure(multiProcess: true)` (Android) or `configure(appGroupId: …)` (iOS).
+
+**Which platforms are supported?**
+Android and iOS. (Not web or desktop.)
+
+**Do I need to change `AndroidManifest.xml` / `Info.plist`?**
+No — it works out of the box. The only exception is iOS App Groups, which
+require enabling the App Group capability in Xcode if you use `appGroupId`.
 
 ---
 
