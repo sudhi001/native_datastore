@@ -1,3 +1,9 @@
+## 1.5.3
+
+* Documentation only — added a real screen recording of the bundled example app
+  to the README ("See it in action"), showing the Regular and Secure stores
+  running on a device.
+
 ## 1.5.2
 
 * Documentation only — added a fourth animated diagram to the README
