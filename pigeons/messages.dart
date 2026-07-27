@@ -81,6 +81,59 @@ abstract class DatastoreApi {
 
   @async
   void setMap(String key, String value);
+
+  // ---- Atomic read-modify-write ----
+  // Each runs as a single native transaction (DataStore `updateData` on
+  // Android, the serial queue on iOS), so concurrent callers never race on a
+  // read-then-write across the platform boundary.
+
+  /// Atomically adds [delta] to the int at [key] (treating a missing value as
+  /// 0) and returns the new value.
+  @async
+  int incrementInt(String key, int delta);
+
+  /// Atomically adds [delta] to the double at [key] (treating a missing value
+  /// as 0.0) and returns the new value.
+  @async
+  double incrementDouble(String key, double delta);
+
+  /// Atomically flips the bool at [key] (treating a missing value as false)
+  /// and returns the new value.
+  @async
+  bool toggleBool(String key);
+
+  /// Atomically sets [key] to [value] only if its current value equals
+  /// [expected] (a null [expected] means "only if absent", a null [value]
+  /// means "remove"). Returns true if the swap happened.
+  @async
+  bool compareAndSetString(String key, String? expected, String? value);
+
+  @async
+  bool compareAndSetInt(String key, int? expected, int? value);
+
+  @async
+  bool compareAndSetDouble(String key, double? expected, double? value);
+
+  @async
+  bool compareAndSetBool(String key, bool? expected, bool? value);
+
+  // ---- Migration ----
+
+  /// Copies existing values written by the `shared_preferences` plugin into
+  /// this store. When [overwrite] is false, keys already present here are
+  /// left untouched. Returns the number of keys imported.
+  @async
+  int migrateFromSharedPreferences(bool overwrite);
+
+  // ---- Configuration ----
+
+  /// Configures the storage backend. Must be called before the first read or
+  /// write. When [multiProcess] is true (Android) the store is opened in
+  /// multi-process mode; [appGroupId], when non-null (iOS), backs storage with
+  /// an App Group suite so extensions/processes sharing the group see the same
+  /// data. Both default off, leaving the single-process store untouched.
+  @async
+  void configure(bool multiProcess, String? appGroupId);
 }
 
 /// Secure-storage host API. Implementations encrypt data at rest using

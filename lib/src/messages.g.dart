@@ -459,6 +459,193 @@ class DatastoreApi {
     )
     ;
   }
+
+  /// Atomically adds [delta] to the int at [key] (treating a missing value as
+  /// 0) and returns the new value.
+  Future<int> incrementInt(String key, int delta) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.incrementInt$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[key, delta]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as int;
+  }
+
+  /// Atomically adds [delta] to the double at [key] (treating a missing value
+  /// as 0.0) and returns the new value.
+  Future<double> incrementDouble(String key, double delta) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.incrementDouble$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[key, delta]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as double;
+  }
+
+  /// Atomically flips the bool at [key] (treating a missing value as false)
+  /// and returns the new value.
+  Future<bool> toggleBool(String key) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.toggleBool$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[key]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Atomically sets [key] to [value] only if its current value equals
+  /// [expected] (a null [expected] means "only if absent", a null [value]
+  /// means "remove"). Returns true if the swap happened.
+  Future<bool> compareAndSetString(String key, String? expected, String? value) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.compareAndSetString$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[key, expected, value]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<bool> compareAndSetInt(String key, int? expected, int? value) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.compareAndSetInt$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[key, expected, value]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<bool> compareAndSetDouble(String key, double? expected, double? value) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.compareAndSetDouble$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[key, expected, value]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<bool> compareAndSetBool(String key, bool? expected, bool? value) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.compareAndSetBool$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[key, expected, value]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Copies existing values written by the `shared_preferences` plugin into
+  /// this store. When [overwrite] is false, keys already present here are
+  /// left untouched. Returns the number of keys imported.
+  Future<int> migrateFromSharedPreferences(bool overwrite) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.migrateFromSharedPreferences$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[overwrite]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as int;
+  }
+
+  /// Configures the storage backend. Must be called before the first read or
+  /// write. When [multiProcess] is true (Android) the store is opened in
+  /// multi-process mode; [appGroupId], when non-null (iOS), backs storage with
+  /// an App Group suite so extensions/processes sharing the group see the same
+  /// data. Both default off, leaving the single-process store untouched.
+  Future<void> configure(bool multiProcess, String? appGroupId) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.DatastoreApi.configure$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[multiProcess, appGroupId]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
 }
 
 /// Secure-storage host API. Implementations encrypt data at rest using

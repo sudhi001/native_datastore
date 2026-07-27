@@ -49,6 +49,8 @@ a database like [`sqflite`](https://pub.dev/packages/sqflite),
 - [Error Handling](#error-handling)
 - [Handling Null Values](#handling-null-values)
 - [API Reference](#api-reference)
+- [Reactive Observation (`watch`)](#reactive-observation-watch) — rebuild on change
+- [Atomic Operations](#atomic-operations) — counters, flags, compare-and-set
 - [🔒 Secure Storage](#-secure-storage) — for tokens and secrets
 - [Storage Details](#storage-details)
 - [Migrating from shared_preferences](#migrating-from-shared_preferences)
@@ -66,6 +68,10 @@ a database like [`sqflite`](https://pub.dev/packages/sqflite),
 - **Drop-in replacement** -- Same getter/setter pattern as `shared_preferences`. Zero learning curve.
 - **Type-safe platform communication** -- Built with [Pigeon](https://pub.dev/packages/pigeon). No hand-written method channels, no string-based lookups.
 - **Cross-platform** -- One Dart API for Android and iOS.
+- **Reactive** -- `watch*` any key as a `Stream` and rebuild your UI on change.
+- **Atomic** -- Transaction-safe `increment`, `toggle`, and `compareAndSet`.
+- **Migration** -- One-call import from `shared_preferences`.
+- **Multi-process ready** -- Opt-in multi-process (Android) / App Group (iOS) support.
 - **Lightweight** -- No platform interface layer. A thin, clean bridge to native APIs.
 
 ---
@@ -338,6 +344,69 @@ if (await datastore.containsKey('profile')) {
 
 ---
 
+## Reactive Observation (`watch`)
+
+Instead of reading a value once, you can **watch** a key and rebuild your UI
+automatically whenever it changes. Each `watch*` method returns a `Stream` that
+emits the current value immediately, then a new value on every change (and
+`null` when the key is removed).
+
+```dart
+final datastore = NativeDatastore();
+
+// Rebuild whenever "darkMode" changes — great with StreamBuilder.
+StreamBuilder<bool?>(
+  stream: datastore.watchBool('darkMode'),
+  builder: (context, snapshot) {
+    final dark = snapshot.data ?? false;
+    return Text(dark ? '🌙 Dark' : '☀️ Light');
+  },
+);
+```
+
+There's a `watch*` for every type — `watchString`, `watchBool`, `watchInt`,
+`watchDouble`, `watchStringList`, `watchBytes`, `watchDateTime`, `watchMap` —
+plus `watchChanges()`, which emits the list of keys that changed if you want to
+observe the whole store.
+
+> This is the reactive `Flow`-style API DataStore is known for: on Android it is
+> backed by `DataStore.data`, and on iOS by `UserDefaults` change
+> notifications. Cancel the stream subscription (or let `StreamBuilder` do it)
+> when you're done.
+
+---
+
+## Atomic Operations
+
+When several parts of your app update the same value, a plain
+read-then-write can lose updates. These operations run as a **single native
+transaction**, so they're safe under concurrency:
+
+```dart
+// Counters — a missing value is treated as 0.
+final views = await datastore.incrementInt('views');       // +1, returns new value
+await datastore.incrementInt('views', 10);                 // +10
+await datastore.decrementInt('retries');                   // -1
+await datastore.incrementDouble('balance', 4.50);
+
+// Flags — missing is treated as false, so the first toggle yields true.
+final enabled = await datastore.toggleBool('featureX');
+
+// Compare-and-set — only writes if the current value matches [expected].
+// null expected = "only if absent"; null value = "remove".
+final ok = await datastore.compareAndSetString(
+  'status',
+  expected: 'pending',
+  value: 'done',
+); // false if 'status' wasn't 'pending'
+```
+
+Available: `incrementInt`, `decrementInt`, `incrementDouble`, `toggleBool`, and
+`compareAndSetString` / `compareAndSetInt` / `compareAndSetDouble` /
+`compareAndSetBool`.
+
+---
+
 ## 🔒 Secure Storage
 
 For secrets (auth tokens, refresh tokens, encryption keys) use the
@@ -421,6 +490,18 @@ final value = await datastore.getString('key');
 | Android backend | SharedPreferences | Jetpack DataStore |
 | Extra types | -- | `Uint8List`, `DateTime`, `Map` |
 
+**Already have data in `shared_preferences`?** Import it in one call so your
+users don't lose anything on upgrade:
+
+```dart
+// Copies existing shared_preferences values into native_datastore.
+// Safe to call on every launch — with overwrite: false it imports nothing
+// the second time. Returns the number of keys imported.
+final imported = await datastore.migrateFromSharedPreferences();
+```
+
+Scalars (`String`, `bool`, `int`, `double`) and string lists are migrated.
+
 ---
 
 ## Platform Details
@@ -493,11 +574,33 @@ mid-write. A naive storage layer can lose or corrupt data when this happens.
   coroutines are cancelled before the Pigeon channel is torn down, so the
   plugin never replies on a dead channel.
 
-### ⚠️ Multi-process limitation
+### Multi-process access (opt-in)
 
-The Android backend uses single-process Preferences DataStore. **It is
-not safe to use this plugin from more than one process at a time.** This
-matters if your app declares any of the following in
+**By default** the plugin uses single-process storage, and the default store
+is *not* safe to access from more than one process at a time. If you need
+multi-process access, opt in once at startup with `configure` — this is
+non-destructive and leaves the default store untouched:
+
+```dart
+// Call once, before the first read/write.
+await NativeDatastore().configure(
+  multiProcess: true,           // Android: open a MultiProcessDataStore
+  appGroupId: 'group.com.you.app', // iOS: share via an App Group suite
+);
+```
+
+- **Android** (`multiProcess: true`) opens a `MultiProcessDataStore` in its own
+  file, safe for concurrent access from multiple processes. Because it uses a
+  separate file, values are not shared with the default single-process store.
+- **iOS** (`appGroupId`) backs storage with `UserDefaults(suiteName:)` so an app
+  extension or other process in the same App Group sees the same data. You must
+  enable the App Group capability in Xcode.
+
+### ⚠️ The default (single-process) store
+
+Without `configure`, the Android backend uses single-process Preferences
+DataStore. **It is not safe to use the default store from more than one process
+at a time.** This matters if your app declares any of the following in
 `AndroidManifest.xml`:
 
 - A `<service>`, `<receiver>`, or `<activity>` with `android:process=":foo"`
@@ -510,10 +613,9 @@ reappearing after an app upgrade, or in the worst case repeated
 `CorruptionException`s (which the corruption handler will swallow by
 resetting the file to empty -- i.e., data loss).
 
-**Recommended pattern:** call `native_datastore` only from the main
-process (the one Flutter runs in). If a secondary process needs to read
-config, push a snapshot to it through Intent extras, a `ContentProvider`,
-or a small `SharedPreferences` file dedicated to that process.
+**Recommended pattern:** either call `native_datastore` only from the main
+process (the one Flutter runs in), or opt into multi-process mode above if a
+secondary process genuinely needs shared access.
 
 ---
 

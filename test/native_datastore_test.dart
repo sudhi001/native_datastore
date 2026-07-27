@@ -67,6 +67,15 @@ class MockDatastoreChannel {
       'setDateTime',
       'getMap',
       'setMap',
+      'incrementInt',
+      'incrementDouble',
+      'toggleBool',
+      'compareAndSetString',
+      'compareAndSetInt',
+      'compareAndSetDouble',
+      'compareAndSetBool',
+      'migrateFromSharedPreferences',
+      'configure',
     ];
     for (final method in methods) {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -921,6 +930,158 @@ void main() {
       final s = SecureDatastore.withApi(SecureDatastoreApi());
       expect(await s.getString('k'), 'injected-secret');
     });
+  });
+
+  group('atomic operations', () {
+    late NativeDatastore datastore;
+
+    setUp(() {
+      datastore = NativeDatastore();
+      MockDatastoreChannel.reset();
+    });
+
+    tearDown(MockDatastoreChannel.reset);
+
+    test('incrementInt returns the new value', () async {
+      MockDatastoreChannel.mockMethod('incrementInt', 5);
+      expect(await datastore.incrementInt('count', 5), 5);
+    });
+
+    test('incrementInt defaults delta to 1', () async {
+      MockDatastoreChannel.mockMethod('incrementInt', 1);
+      expect(await datastore.incrementInt('count'), 1);
+    });
+
+    test('decrementInt delegates to incrementInt', () async {
+      MockDatastoreChannel.mockMethod('incrementInt', 9);
+      expect(await datastore.decrementInt('count'), 9);
+    });
+
+    test('incrementDouble returns the new value', () async {
+      MockDatastoreChannel.mockMethod('incrementDouble', 2.5);
+      expect(await datastore.incrementDouble('rating', 0.5), 2.5);
+    });
+
+    test('toggleBool returns the new value', () async {
+      MockDatastoreChannel.mockMethod('toggleBool', true);
+      expect(await datastore.toggleBool('flag'), true);
+    });
+
+    test('compareAndSetString returns true on swap', () async {
+      MockDatastoreChannel.mockMethod('compareAndSetString', true);
+      expect(
+        await datastore.compareAndSetString('k', expected: 'a', value: 'b'),
+        isTrue,
+      );
+    });
+
+    test('compareAndSetInt returns false on mismatch', () async {
+      MockDatastoreChannel.mockMethod('compareAndSetInt', false);
+      expect(
+        await datastore.compareAndSetInt('k', expected: 1, value: 2),
+        isFalse,
+      );
+    });
+
+    test('compareAndSetDouble returns true', () async {
+      MockDatastoreChannel.mockMethod('compareAndSetDouble', true);
+      expect(await datastore.compareAndSetDouble('k', value: 1.0), isTrue);
+    });
+
+    test('compareAndSetBool returns true', () async {
+      MockDatastoreChannel.mockMethod('compareAndSetBool', true);
+      expect(await datastore.compareAndSetBool('k', value: true), isTrue);
+    });
+
+    test('atomic ops validate the key', () async {
+      final e = await _expectException(() => datastore.incrementInt(''));
+      expect(e.message, contains('empty'));
+    });
+  });
+
+  group('migration and configuration', () {
+    late NativeDatastore datastore;
+
+    setUp(() {
+      datastore = NativeDatastore();
+      MockDatastoreChannel.reset();
+    });
+
+    tearDown(MockDatastoreChannel.reset);
+
+    test('migrateFromSharedPreferences returns imported count', () async {
+      MockDatastoreChannel.mockMethod('migrateFromSharedPreferences', 3);
+      expect(await datastore.migrateFromSharedPreferences(), 3);
+    });
+
+    test('configure completes', () async {
+      MockDatastoreChannel.mockMethod('configure', null);
+      await expectLater(
+        datastore.configure(multiProcess: true, appGroupId: 'group.test'),
+        completes,
+      );
+    });
+
+    test('configure surfaces platform errors', () async {
+      MockDatastoreChannel.mockMethodError('configure',
+          errorMessage: 'boom');
+      final e = await _expectException(() => datastore.configure());
+      expect(e.message, contains('configure'));
+    });
+  });
+
+  group('reactive observation', () {
+    const changesChannel = EventChannel('in.sudhi.native_datastore/changes');
+    late NativeDatastore datastore;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    late List<MockStreamHandlerEventSink> sinks;
+
+    setUp(() {
+      datastore = NativeDatastore();
+      MockDatastoreChannel.reset();
+      // Fresh cached stream per test so each rebinds to the handler below.
+      NativeDatastore.debugResetChangeStream();
+      sinks = <MockStreamHandlerEventSink>[];
+      // Capture each fresh subscription's sink so the test can push events.
+      messenger.setMockStreamHandler(
+        changesChannel,
+        MockStreamHandler.inline(
+          onListen: (Object? args, MockStreamHandlerEventSink sink) =>
+              sinks.add(sink),
+        ),
+      );
+    });
+
+    tearDown(() {
+      MockDatastoreChannel.reset();
+      messenger.setMockStreamHandler(changesChannel, null);
+      NativeDatastore.debugResetChangeStream();
+    });
+
+    test('watchString emits the current value on subscription', () async {
+      MockDatastoreChannel.mockMethod('getString', 'v0');
+      expect(await datastore.watchString('k').first, 'v0');
+    });
+
+    test('watchChanges surfaces the changed keys from the platform', () async {
+      final received = <List<String>>[];
+      final sub = datastore.watchChanges().listen(received.add);
+      await pumpEventQueue();
+
+      sinks.single.success(<String>['count', 'name']);
+      await pumpEventQueue();
+      await sub.cancel();
+
+      expect(received.single, <String>['count', 'name']);
+    });
+
+    // Note: the per-key re-read/filter behaviour of watchInt/watchString/etc.
+    // (emit the initial value, then re-read only when the changed-keys list
+    // contains the watched key) is exercised on-device by the example's
+    // integration test — unit-mocking the ordering of the EventChannel
+    // subscription against the initial async read is brittle and adds no
+    // coverage over the two tests above plus that integration test.
   });
 }
 

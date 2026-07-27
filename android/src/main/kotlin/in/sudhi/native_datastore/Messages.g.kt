@@ -80,6 +80,44 @@ interface DatastoreApi {
   fun setDateTime(key: String, value: Long, callback: (Result<Unit>) -> Unit)
   fun getMap(key: String, callback: (Result<String?>) -> Unit)
   fun setMap(key: String, value: String, callback: (Result<Unit>) -> Unit)
+  /**
+   * Atomically adds [delta] to the int at [key] (treating a missing value as
+   * 0) and returns the new value.
+   */
+  fun incrementInt(key: String, delta: Long, callback: (Result<Long>) -> Unit)
+  /**
+   * Atomically adds [delta] to the double at [key] (treating a missing value
+   * as 0.0) and returns the new value.
+   */
+  fun incrementDouble(key: String, delta: Double, callback: (Result<Double>) -> Unit)
+  /**
+   * Atomically flips the bool at [key] (treating a missing value as false)
+   * and returns the new value.
+   */
+  fun toggleBool(key: String, callback: (Result<Boolean>) -> Unit)
+  /**
+   * Atomically sets [key] to [value] only if its current value equals
+   * [expected] (a null [expected] means "only if absent", a null [value]
+   * means "remove"). Returns true if the swap happened.
+   */
+  fun compareAndSetString(key: String, expected: String?, value: String?, callback: (Result<Boolean>) -> Unit)
+  fun compareAndSetInt(key: String, expected: Long?, value: Long?, callback: (Result<Boolean>) -> Unit)
+  fun compareAndSetDouble(key: String, expected: Double?, value: Double?, callback: (Result<Boolean>) -> Unit)
+  fun compareAndSetBool(key: String, expected: Boolean?, value: Boolean?, callback: (Result<Boolean>) -> Unit)
+  /**
+   * Copies existing values written by the `shared_preferences` plugin into
+   * this store. When [overwrite] is false, keys already present here are
+   * left untouched. Returns the number of keys imported.
+   */
+  fun migrateFromSharedPreferences(overwrite: Boolean, callback: (Result<Long>) -> Unit)
+  /**
+   * Configures the storage backend. Must be called before the first read or
+   * write. When [multiProcess] is true (Android) the store is opened in
+   * multi-process mode; [appGroupId], when non-null (iOS), backs storage with
+   * an App Group suite so extensions/processes sharing the group see the same
+   * data. Both default off, leaving the single-process store untouched.
+   */
+  fun configure(multiProcess: Boolean, appGroupId: String?, callback: (Result<Unit>) -> Unit)
 
   companion object {
     /** The codec used by DatastoreApi. */
@@ -491,6 +529,196 @@ interface DatastoreApi {
             val keyArg = args[0] as String
             val valueArg = args[1] as String
             api.setMap(keyArg, valueArg) { result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                reply.reply(MessagesPigeonUtils.wrapResult(null))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.incrementInt$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keyArg = args[0] as String
+            val deltaArg = args[1] as Long
+            api.incrementInt(keyArg, deltaArg) { result: Result<Long> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MessagesPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.incrementDouble$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keyArg = args[0] as String
+            val deltaArg = args[1] as Double
+            api.incrementDouble(keyArg, deltaArg) { result: Result<Double> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MessagesPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.toggleBool$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keyArg = args[0] as String
+            api.toggleBool(keyArg) { result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MessagesPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.compareAndSetString$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keyArg = args[0] as String
+            val expectedArg = args[1] as String?
+            val valueArg = args[2] as String?
+            api.compareAndSetString(keyArg, expectedArg, valueArg) { result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MessagesPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.compareAndSetInt$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keyArg = args[0] as String
+            val expectedArg = args[1] as Long?
+            val valueArg = args[2] as Long?
+            api.compareAndSetInt(keyArg, expectedArg, valueArg) { result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MessagesPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.compareAndSetDouble$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keyArg = args[0] as String
+            val expectedArg = args[1] as Double?
+            val valueArg = args[2] as Double?
+            api.compareAndSetDouble(keyArg, expectedArg, valueArg) { result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MessagesPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.compareAndSetBool$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keyArg = args[0] as String
+            val expectedArg = args[1] as Boolean?
+            val valueArg = args[2] as Boolean?
+            api.compareAndSetBool(keyArg, expectedArg, valueArg) { result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MessagesPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.migrateFromSharedPreferences$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val overwriteArg = args[0] as Boolean
+            api.migrateFromSharedPreferences(overwriteArg) { result: Result<Long> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MessagesPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.configure$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val multiProcessArg = args[0] as Boolean
+            val appGroupIdArg = args[1] as String?
+            api.configure(multiProcessArg, appGroupIdArg) { result: Result<Unit> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(MessagesPigeonUtils.wrapError(error))

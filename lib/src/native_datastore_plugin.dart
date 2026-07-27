@@ -355,4 +355,204 @@ class NativeDatastore {
       await _api.setMap(key, json);
     });
   }
+
+  // ---- Atomic read-modify-write ----
+
+  /// Atomically adds [delta] to the [int] stored at [key] and returns the new
+  /// value. A missing value is treated as `0`. The read-modify-write happens as
+  /// a single native transaction, so concurrent callers never lose an update.
+  ///
+  /// {@macro native_datastore.setter}
+  Future<int> incrementInt(String key, [int delta = 1]) {
+    _validateKey(key);
+    return _guard('incrementInt("$key")', () => _api.incrementInt(key, delta));
+  }
+
+  /// Atomically subtracts [amount] from the [int] stored at [key] and returns
+  /// the new value. Convenience for [incrementInt] with a negative delta.
+  ///
+  /// {@macro native_datastore.setter}
+  Future<int> decrementInt(String key, [int amount = 1]) =>
+      incrementInt(key, -amount);
+
+  /// Atomically adds [delta] to the [double] stored at [key] and returns the
+  /// new value. A missing value is treated as `0.0`.
+  ///
+  /// {@macro native_datastore.setter}
+  Future<double> incrementDouble(String key, [double delta = 1.0]) {
+    _validateKey(key);
+    return _guard(
+      'incrementDouble("$key")',
+      () => _api.incrementDouble(key, delta),
+    );
+  }
+
+  /// Atomically flips the [bool] stored at [key] and returns the new value.
+  /// A missing value is treated as `false` (so the first toggle yields `true`).
+  ///
+  /// {@macro native_datastore.setter}
+  Future<bool> toggleBool(String key) {
+    _validateKey(key);
+    return _guard('toggleBool("$key")', () => _api.toggleBool(key));
+  }
+
+  /// {@template native_datastore.cas}
+  /// Atomically sets [key] to [value] only if its current value equals
+  /// [expected]. A null [expected] means "only if the key is currently absent";
+  /// a null [value] means "remove the key". Returns `true` if the swap was
+  /// applied, `false` if the current value did not match [expected].
+  ///
+  /// {@macro native_datastore.setter}
+  /// {@endtemplate}
+  Future<bool> compareAndSetString(
+    String key, {
+    String? expected,
+    String? value,
+  }) {
+    _validateKey(key);
+    return _guard(
+      'compareAndSetString("$key")',
+      () => _api.compareAndSetString(key, expected, value),
+    );
+  }
+
+  /// {@macro native_datastore.cas}
+  Future<bool> compareAndSetInt(String key, {int? expected, int? value}) {
+    _validateKey(key);
+    return _guard(
+      'compareAndSetInt("$key")',
+      () => _api.compareAndSetInt(key, expected, value),
+    );
+  }
+
+  /// {@macro native_datastore.cas}
+  Future<bool> compareAndSetDouble(
+    String key, {
+    double? expected,
+    double? value,
+  }) {
+    _validateKey(key);
+    return _guard(
+      'compareAndSetDouble("$key")',
+      () => _api.compareAndSetDouble(key, expected, value),
+    );
+  }
+
+  /// {@macro native_datastore.cas}
+  Future<bool> compareAndSetBool(String key, {bool? expected, bool? value}) {
+    _validateKey(key);
+    return _guard(
+      'compareAndSetBool("$key")',
+      () => _api.compareAndSetBool(key, expected, value),
+    );
+  }
+
+  // ---- Reactive observation ----
+
+  /// Broadcast stream of change notifications from the platform. Each event is
+  /// the list of user-facing keys whose value changed (or was removed) since
+  /// the previous notification. Shared across every `watch*` subscriber so the
+  /// native side only maintains a single observer.
+  static const EventChannel _changesChannel =
+      EventChannel('in.sudhi.native_datastore/changes');
+  static Stream<List<String>>? _changesBroadcast;
+  static Stream<List<String>> get _changes => _changesBroadcast ??=
+      _changesChannel.receiveBroadcastStream().map(
+            (Object? event) => (event as List<Object?>).cast<String>(),
+          );
+
+  /// Drops the cached change-notification stream so the next `watch*` call
+  /// re-subscribes to the platform channel. Only needed in tests that swap the
+  /// mocked [EventChannel] handler between cases.
+  @visibleForTesting
+  static void debugResetChangeStream() => _changesBroadcast = null;
+
+  /// Emits the current value of [key] immediately, then a fresh value every
+  /// time the platform reports that [key] changed. [read] re-fetches the typed
+  /// value on each change.
+  Stream<T?> _watch<T>(String key, Future<T?> Function() read) async* {
+    _validateKey(key);
+    yield await read();
+    await for (final List<String> changedKeys in _changes) {
+      if (changedKeys.contains(key)) {
+        yield await read();
+      }
+    }
+  }
+
+  /// Watches the [String] at [key]. Emits the current value on subscription,
+  /// then a new value whenever it changes. Emits `null` when the key is absent
+  /// or removed.
+  ///
+  /// {@macro native_datastore.getter}
+  Stream<String?> watchString(String key) =>
+      _watch(key, () => getString(key));
+
+  /// Watches the [bool] at [key]. See [watchString].
+  Stream<bool?> watchBool(String key) => _watch(key, () => getBool(key));
+
+  /// Watches the [int] at [key]. See [watchString].
+  Stream<int?> watchInt(String key) => _watch(key, () => getInt(key));
+
+  /// Watches the [double] at [key]. See [watchString].
+  Stream<double?> watchDouble(String key) => _watch(key, () => getDouble(key));
+
+  /// Watches the [List]<[String]> at [key]. See [watchString].
+  Stream<List<String>?> watchStringList(String key) =>
+      _watch(key, () => getStringList(key));
+
+  /// Watches the [Uint8List] at [key]. See [watchString].
+  Stream<Uint8List?> watchBytes(String key) =>
+      _watch(key, () => getBytes(key));
+
+  /// Watches the [DateTime] at [key]. See [watchString].
+  Stream<DateTime?> watchDateTime(String key) =>
+      _watch(key, () => getDateTime(key));
+
+  /// Watches the [Map] at [key]. See [watchString].
+  Stream<Map<String, dynamic>?> watchMap(String key) =>
+      _watch(key, () => getMap(key));
+
+  /// Emits the list of user-facing keys that changed on every store mutation.
+  /// Useful for observing the whole store rather than a single key.
+  Stream<List<String>> watchChanges() => _changes;
+
+  // ---- Migration ----
+
+  /// Imports values previously written by the `shared_preferences` plugin into
+  /// this data store, returning the number of keys imported.
+  ///
+  /// Scalar types (`String`, `bool`, `int`, `double`) and string lists are
+  /// migrated. When [overwrite] is `false` (the default), keys already present
+  /// here are left untouched. Safe to call on every launch — a second call
+  /// with `overwrite: false` imports nothing new.
+  ///
+  /// Throws [NativeDatastoreException] if the platform call fails.
+  Future<int> migrateFromSharedPreferences({bool overwrite = false}) {
+    return _guard(
+      'migrateFromSharedPreferences',
+      () => _api.migrateFromSharedPreferences(overwrite),
+    );
+  }
+
+  // ---- Configuration ----
+
+  /// Configures the storage backend. Call once at startup, before any read or
+  /// write.
+  ///
+  /// * [multiProcess] (Android) opens the store in multi-process mode so it can
+  ///   be safely accessed from more than one process. Ignored on iOS.
+  /// * [appGroupId] (iOS) backs storage with the given App Group suite so app
+  ///   extensions and other processes sharing the group observe the same data.
+  ///   Ignored on Android.
+  ///
+  /// Both default off, leaving the standard single-process store in place.
+  ///
+  /// Throws [NativeDatastoreException] if the platform call fails.
+  Future<void> configure({bool multiProcess = false, String? appGroupId}) {
+    return _guard(
+      'configure',
+      () => _api.configure(multiProcess, appGroupId),
+    );
+  }
 }

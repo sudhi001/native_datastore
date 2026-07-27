@@ -119,6 +119,32 @@ protocol DatastoreApi {
   func setDateTime(key: String, value: Int64, completion: @escaping (Result<Void, Error>) -> Void)
   func getMap(key: String, completion: @escaping (Result<String?, Error>) -> Void)
   func setMap(key: String, value: String, completion: @escaping (Result<Void, Error>) -> Void)
+  /// Atomically adds [delta] to the int at [key] (treating a missing value as
+  /// 0) and returns the new value.
+  func incrementInt(key: String, delta: Int64, completion: @escaping (Result<Int64, Error>) -> Void)
+  /// Atomically adds [delta] to the double at [key] (treating a missing value
+  /// as 0.0) and returns the new value.
+  func incrementDouble(key: String, delta: Double, completion: @escaping (Result<Double, Error>) -> Void)
+  /// Atomically flips the bool at [key] (treating a missing value as false)
+  /// and returns the new value.
+  func toggleBool(key: String, completion: @escaping (Result<Bool, Error>) -> Void)
+  /// Atomically sets [key] to [value] only if its current value equals
+  /// [expected] (a null [expected] means "only if absent", a null [value]
+  /// means "remove"). Returns true if the swap happened.
+  func compareAndSetString(key: String, expected: String?, value: String?, completion: @escaping (Result<Bool, Error>) -> Void)
+  func compareAndSetInt(key: String, expected: Int64?, value: Int64?, completion: @escaping (Result<Bool, Error>) -> Void)
+  func compareAndSetDouble(key: String, expected: Double?, value: Double?, completion: @escaping (Result<Bool, Error>) -> Void)
+  func compareAndSetBool(key: String, expected: Bool?, value: Bool?, completion: @escaping (Result<Bool, Error>) -> Void)
+  /// Copies existing values written by the `shared_preferences` plugin into
+  /// this store. When [overwrite] is false, keys already present here are
+  /// left untouched. Returns the number of keys imported.
+  func migrateFromSharedPreferences(overwrite: Bool, completion: @escaping (Result<Int64, Error>) -> Void)
+  /// Configures the storage backend. Must be called before the first read or
+  /// write. When [multiProcess] is true (Android) the store is opened in
+  /// multi-process mode; [appGroupId], when non-null (iOS), backs storage with
+  /// an App Group suite so extensions/processes sharing the group see the same
+  /// data. Both default off, leaving the single-process store untouched.
+  func configure(multiProcess: Bool, appGroupId: String?, completion: @escaping (Result<Void, Error>) -> Void)
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -485,6 +511,187 @@ class DatastoreApiSetup {
       }
     } else {
       setMapChannel.setMessageHandler(nil)
+    }
+    /// Atomically adds [delta] to the int at [key] (treating a missing value as
+    /// 0) and returns the new value.
+    let incrementIntChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.incrementInt\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      incrementIntChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        let deltaArg = args[1] as! Int64
+        api.incrementInt(key: keyArg, delta: deltaArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      incrementIntChannel.setMessageHandler(nil)
+    }
+    /// Atomically adds [delta] to the double at [key] (treating a missing value
+    /// as 0.0) and returns the new value.
+    let incrementDoubleChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.incrementDouble\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      incrementDoubleChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        let deltaArg = args[1] as! Double
+        api.incrementDouble(key: keyArg, delta: deltaArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      incrementDoubleChannel.setMessageHandler(nil)
+    }
+    /// Atomically flips the bool at [key] (treating a missing value as false)
+    /// and returns the new value.
+    let toggleBoolChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.toggleBool\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      toggleBoolChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        api.toggleBool(key: keyArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      toggleBoolChannel.setMessageHandler(nil)
+    }
+    /// Atomically sets [key] to [value] only if its current value equals
+    /// [expected] (a null [expected] means "only if absent", a null [value]
+    /// means "remove"). Returns true if the swap happened.
+    let compareAndSetStringChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.compareAndSetString\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      compareAndSetStringChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        let expectedArg: String? = nilOrValue(args[1])
+        let valueArg: String? = nilOrValue(args[2])
+        api.compareAndSetString(key: keyArg, expected: expectedArg, value: valueArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      compareAndSetStringChannel.setMessageHandler(nil)
+    }
+    let compareAndSetIntChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.compareAndSetInt\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      compareAndSetIntChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        let expectedArg: Int64? = nilOrValue(args[1])
+        let valueArg: Int64? = nilOrValue(args[2])
+        api.compareAndSetInt(key: keyArg, expected: expectedArg, value: valueArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      compareAndSetIntChannel.setMessageHandler(nil)
+    }
+    let compareAndSetDoubleChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.compareAndSetDouble\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      compareAndSetDoubleChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        let expectedArg: Double? = nilOrValue(args[1])
+        let valueArg: Double? = nilOrValue(args[2])
+        api.compareAndSetDouble(key: keyArg, expected: expectedArg, value: valueArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      compareAndSetDoubleChannel.setMessageHandler(nil)
+    }
+    let compareAndSetBoolChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.compareAndSetBool\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      compareAndSetBoolChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keyArg = args[0] as! String
+        let expectedArg: Bool? = nilOrValue(args[1])
+        let valueArg: Bool? = nilOrValue(args[2])
+        api.compareAndSetBool(key: keyArg, expected: expectedArg, value: valueArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      compareAndSetBoolChannel.setMessageHandler(nil)
+    }
+    /// Copies existing values written by the `shared_preferences` plugin into
+    /// this store. When [overwrite] is false, keys already present here are
+    /// left untouched. Returns the number of keys imported.
+    let migrateFromSharedPreferencesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.migrateFromSharedPreferences\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      migrateFromSharedPreferencesChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let overwriteArg = args[0] as! Bool
+        api.migrateFromSharedPreferences(overwrite: overwriteArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      migrateFromSharedPreferencesChannel.setMessageHandler(nil)
+    }
+    /// Configures the storage backend. Must be called before the first read or
+    /// write. When [multiProcess] is true (Android) the store is opened in
+    /// multi-process mode; [appGroupId], when non-null (iOS), backs storage with
+    /// an App Group suite so extensions/processes sharing the group see the same
+    /// data. Both default off, leaving the single-process store untouched.
+    let configureChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.configure\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      configureChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let multiProcessArg = args[0] as! Bool
+        let appGroupIdArg: String? = nilOrValue(args[1])
+        api.configure(multiProcess: multiProcessArg, appGroupId: appGroupIdArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      configureChannel.setMessageHandler(nil)
     }
   }
 }

@@ -15,7 +15,9 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     private static let mapBucket = "__map__:"
     private static let typedBuckets = [listBucket, bytesBucket, dateTimeBucket, mapBucket]
 
-    private let defaults = UserDefaults.standard
+    // `var` so `configure(appGroupId:)` can repoint storage at an App Group
+    // suite. Only ever mutated on `serialQueue`, so access stays serialized.
+    private var defaults = UserDefaults.standard
 
     /// Serial queue for all datastore operations to prevent race conditions.
     private let serialQueue = DispatchQueue(label: "native_datastore.serial")
@@ -24,6 +26,9 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     // a deterministic place to nil it during teardown.
     private var secureInstance: SecureDatastorePlugin?
 
+    private var changesChannel: FlutterEventChannel?
+    private var changesHandler: DatastoreChangesStreamHandler?
+
     public static func register(with registrar: FlutterPluginRegistrar) {
         let instance = NativeDatastorePlugin()
         registrar.publish(instance)
@@ -31,6 +36,15 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
         let secure = SecureDatastorePlugin()
         instance.secureInstance = secure
         SecureDatastoreApiSetup.setUp(binaryMessenger: registrar.messenger(), api: secure)
+
+        let channel = FlutterEventChannel(
+            name: "in.sudhi.native_datastore/changes",
+            binaryMessenger: registrar.messenger()
+        )
+        let handler = DatastoreChangesStreamHandler(plugin: instance)
+        channel.setStreamHandler(handler)
+        instance.changesChannel = channel
+        instance.changesHandler = handler
     }
 
     public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
@@ -39,7 +53,37 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
         // goes away.
         DatastoreApiSetup.setUp(binaryMessenger: registrar.messenger(), api: nil)
         SecureDatastoreApiSetup.setUp(binaryMessenger: registrar.messenger(), api: nil)
+        changesChannel?.setStreamHandler(nil)
+        changesHandler = nil
+        changesChannel = nil
         secureInstance = nil
+    }
+
+    // MARK: - Change-stream support
+
+    /// Snapshot of every namespaced key/value pair currently stored, keyed by
+    /// the full (namespaced) key.
+    fileprivate func namespacedSnapshot() -> [String: Any] {
+        var out: [String: Any] = [:]
+        for (key, value) in defaults.dictionaryRepresentation() where key.hasPrefix(keyNamespace) {
+            out[key] = value
+        }
+        return out
+    }
+
+    /// Strips the namespace and any bucket prefix from a stored key.
+    fileprivate func userFacingKey(_ fullKey: String) -> String {
+        let stripped = String(fullKey.dropFirst(keyNamespace.count))
+        for bucket in Self.typedBuckets where stripped.hasPrefix(bucket) {
+            return String(stripped.dropFirst(bucket.count))
+        }
+        return stripped
+    }
+
+    fileprivate func valuesEqual(_ a: Any?, _ b: Any?) -> Bool {
+        if a == nil && b == nil { return true }
+        guard let a = a, let b = b else { return false }
+        return (a as? NSObject)?.isEqual(b as? NSObject) ?? false
     }
 
     private func scalarKey(_ key: String) -> String { keyNamespace + key }
@@ -286,5 +330,224 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
         onQueue(completion) { plugin in
             plugin.defaults.set(value, forKey: plugin.bucketKey(Self.mapBucket, key))
         }
+    }
+
+    // MARK: - Atomic read-modify-write
+    // Every op runs on `serialQueue`, so a read-then-write inside one `onQueue`
+    // body is atomic with respect to all other datastore operations.
+
+    func incrementInt(key: String, delta: Int64, completion: @escaping (Result<Int64, Error>) -> Void) {
+        onQueue(completion) { plugin in
+            let k = plugin.scalarKey(key)
+            var current: Int64 = 0
+            if let value = plugin.defaults.object(forKey: k),
+               !plugin.isStoredAsBool(value),
+               let number = value as? NSNumber,
+               !plugin.isFloatingPointNumber(number) {
+                current = number.int64Value
+            }
+            let newValue = current + delta
+            plugin.defaults.set(newValue, forKey: k)
+            return newValue
+        }
+    }
+
+    func incrementDouble(key: String, delta: Double, completion: @escaping (Result<Double, Error>) -> Void) {
+        onQueue(completion) { plugin in
+            let k = plugin.scalarKey(key)
+            var current = 0.0
+            if let value = plugin.defaults.object(forKey: k),
+               !plugin.isStoredAsBool(value),
+               let number = value as? NSNumber {
+                current = number.doubleValue
+            }
+            let newValue = current + delta
+            plugin.defaults.set(newValue, forKey: k)
+            return newValue
+        }
+    }
+
+    func toggleBool(key: String, completion: @escaping (Result<Bool, Error>) -> Void) {
+        onQueue(completion) { plugin in
+            let k = plugin.scalarKey(key)
+            var current = false
+            if let value = plugin.defaults.object(forKey: k), plugin.isStoredAsBool(value) {
+                current = (value as! NSNumber).boolValue
+            }
+            let newValue = !current
+            plugin.defaults.set(newValue, forKey: k)
+            return newValue
+        }
+    }
+
+    func compareAndSetString(key: String, expected: String?, value: String?, completion: @escaping (Result<Bool, Error>) -> Void) {
+        onQueue(completion) { plugin in
+            let k = plugin.scalarKey(key)
+            guard plugin.defaults.string(forKey: k) == expected else { return false }
+            if let value = value {
+                plugin.defaults.set(value, forKey: k)
+            } else {
+                plugin.defaults.removeObject(forKey: k)
+            }
+            return true
+        }
+    }
+
+    func compareAndSetInt(key: String, expected: Int64?, value: Int64?, completion: @escaping (Result<Bool, Error>) -> Void) {
+        onQueue(completion) { plugin in
+            let k = plugin.scalarKey(key)
+            var current: Int64? = nil
+            if let v = plugin.defaults.object(forKey: k),
+               !plugin.isStoredAsBool(v),
+               let number = v as? NSNumber,
+               !plugin.isFloatingPointNumber(number) {
+                current = number.int64Value
+            }
+            guard current == expected else { return false }
+            if let value = value {
+                plugin.defaults.set(value, forKey: k)
+            } else {
+                plugin.defaults.removeObject(forKey: k)
+            }
+            return true
+        }
+    }
+
+    func compareAndSetDouble(key: String, expected: Double?, value: Double?, completion: @escaping (Result<Bool, Error>) -> Void) {
+        onQueue(completion) { plugin in
+            let k = plugin.scalarKey(key)
+            var current: Double? = nil
+            if let v = plugin.defaults.object(forKey: k),
+               !plugin.isStoredAsBool(v),
+               let number = v as? NSNumber {
+                current = number.doubleValue
+            }
+            guard current == expected else { return false }
+            if let value = value {
+                plugin.defaults.set(value, forKey: k)
+            } else {
+                plugin.defaults.removeObject(forKey: k)
+            }
+            return true
+        }
+    }
+
+    func compareAndSetBool(key: String, expected: Bool?, value: Bool?, completion: @escaping (Result<Bool, Error>) -> Void) {
+        onQueue(completion) { plugin in
+            let k = plugin.scalarKey(key)
+            var current: Bool? = nil
+            if let v = plugin.defaults.object(forKey: k), plugin.isStoredAsBool(v) {
+                current = (v as! NSNumber).boolValue
+            }
+            guard current == expected else { return false }
+            if let value = value {
+                plugin.defaults.set(value, forKey: k)
+            } else {
+                plugin.defaults.removeObject(forKey: k)
+            }
+            return true
+        }
+    }
+
+    // MARK: - Migration from shared_preferences
+
+    func migrateFromSharedPreferences(overwrite: Bool, completion: @escaping (Result<Int64, Error>) -> Void) {
+        onQueue(completion) { plugin in
+            // shared_preferences on iOS writes to UserDefaults.standard with a
+            // "flutter." key prefix. Copy those into this plugin's namespace.
+            let source = UserDefaults.standard
+            var imported: Int64 = 0
+            for (rawKey, value) in source.dictionaryRepresentation() {
+                guard rawKey.hasPrefix("flutter.") else { continue }
+                let key = String(rawKey.dropFirst("flutter.".count))
+                if key.isEmpty { continue }
+
+                var exists = plugin.defaults.object(forKey: plugin.scalarKey(key)) != nil
+                for bucket in Self.typedBuckets
+                    where plugin.defaults.object(forKey: plugin.bucketKey(bucket, key)) != nil {
+                    exists = true
+                }
+                if exists && !overwrite { continue }
+
+                if let s = value as? String {
+                    plugin.defaults.set(s, forKey: plugin.scalarKey(key))
+                } else if let arr = value as? [String] {
+                    plugin.defaults.set(arr, forKey: plugin.bucketKey(Self.listBucket, key))
+                } else if let number = value as? NSNumber {
+                    if plugin.isStoredAsBool(number) {
+                        plugin.defaults.set(number.boolValue, forKey: plugin.scalarKey(key))
+                    } else if plugin.isFloatingPointNumber(number) {
+                        plugin.defaults.set(number.doubleValue, forKey: plugin.scalarKey(key))
+                    } else {
+                        plugin.defaults.set(number.int64Value, forKey: plugin.scalarKey(key))
+                    }
+                } else {
+                    continue
+                }
+                imported += 1
+            }
+            return imported
+        }
+    }
+
+    // MARK: - Configuration
+
+    func configure(multiProcess: Bool, appGroupId: String?, completion: @escaping (Result<Void, Error>) -> Void) {
+        // `multiProcess` is an Android-only concept. On iOS, cross-process
+        // sharing (e.g. with an app extension) is achieved via an App Group
+        // suite, so we repoint storage when an appGroupId is supplied.
+        onQueue(completion) { plugin in
+            if let appGroupId = appGroupId, let suite = UserDefaults(suiteName: appGroupId) {
+                plugin.defaults = suite
+            } else {
+                plugin.defaults = UserDefaults.standard
+            }
+        }
+    }
+}
+
+/// Streams the set of user-facing keys that change. `UserDefaults` posts a
+/// single global `didChangeNotification` for any write, so we diff a snapshot
+/// of this plugin's namespaced keys to determine which keys actually changed.
+class DatastoreChangesStreamHandler: NSObject, FlutterStreamHandler {
+    private weak var plugin: NativeDatastorePlugin?
+    private var sink: FlutterEventSink?
+    private var snapshot: [String: Any] = [:]
+
+    init(plugin: NativeDatastorePlugin) {
+        self.plugin = plugin
+    }
+
+    func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+        sink = events
+        snapshot = plugin?.namespacedSnapshot() ?? [:]
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(defaultsChanged),
+            name: UserDefaults.didChangeNotification,
+            object: nil
+        )
+        return nil
+    }
+
+    @objc private func defaultsChanged() {
+        guard let plugin = plugin, let sink = sink else { return }
+        let current = plugin.namespacedSnapshot()
+        var changed = Set<String>()
+        for key in Set(current.keys).union(snapshot.keys) where
+            !plugin.valuesEqual(current[key], snapshot[key]) {
+            changed.insert(plugin.userFacingKey(key))
+        }
+        snapshot = current
+        if !changed.isEmpty {
+            let keys = Array(changed)
+            DispatchQueue.main.async { sink(keys) }
+        }
+    }
+
+    func onCancel(withArguments arguments: Any?) -> FlutterError? {
+        NotificationCenter.default.removeObserver(self)
+        sink = nil
+        return nil
     }
 }

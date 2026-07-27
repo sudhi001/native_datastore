@@ -140,4 +140,69 @@ void main() {
     await secure.clear();
     expect(await secure.getKeys(), isEmpty);
   });
+
+  testWidgets('atomic operations', (WidgetTester tester) async {
+    final datastore = NativeDatastore();
+    await datastore.clear();
+
+    // incrementInt treats a missing value as 0 and returns the new value.
+    expect(await datastore.incrementInt('count'), 1);
+    expect(await datastore.incrementInt('count', 4), 5);
+    expect(await datastore.decrementInt('count', 2), 3);
+    expect(await datastore.getInt('count'), 3);
+
+    // incrementDouble
+    expect(await datastore.incrementDouble('rating', 0.5), 0.5);
+    expect(await datastore.incrementDouble('rating', 0.25), 0.75);
+
+    // toggleBool: missing -> true -> false
+    expect(await datastore.toggleBool('flag'), true);
+    expect(await datastore.toggleBool('flag'), false);
+
+    // compareAndSet: swap only when the current value matches expected.
+    await datastore.setString('token', 'a');
+    expect(
+      await datastore.compareAndSetString('token', expected: 'a', value: 'b'),
+      true,
+    );
+    expect(await datastore.getString('token'), 'b');
+    expect(
+      await datastore.compareAndSetString('token', expected: 'a', value: 'c'),
+      false,
+    );
+    expect(await datastore.getString('token'), 'b');
+
+    await datastore.clear();
+  });
+
+  testWidgets('watch emits initial value and reacts to changes',
+      (WidgetTester tester) async {
+    final datastore = NativeDatastore();
+    await datastore.clear();
+    await datastore.setInt('counter', 10);
+
+    final seen = <int?>[];
+    final sub = datastore.watchInt('counter').listen(seen.add);
+
+    // Real wall-clock delays: EventChannel notifications arrive on the actual
+    // event loop, so `tester.pump` (which advances the fake frame clock) is
+    // not enough — we must yield real time for the platform to deliver them.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    await datastore.setInt('counter', 11);
+    await datastore.incrementInt('counter'); // -> 12
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+
+    // A change to an unrelated key must not surface on this stream.
+    await datastore.setString('unrelated', 'x');
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    await sub.cancel();
+
+    expect(seen.first, 10);
+    expect(seen.last, 12);
+    expect(seen.contains(11), true);
+
+    await datastore.clear();
+  });
 }

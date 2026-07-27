@@ -1,3 +1,29 @@
+## 1.5.0
+
+Feature release bringing the plugin to parity with Jetpack DataStore's core
+capabilities. All additive — no breaking changes.
+
+* **New: reactive observation (`watch*`).** Observe a key as a `Stream` that
+  emits the current value on subscription and a fresh value on every change:
+  `watchString`, `watchBool`, `watchInt`, `watchDouble`, `watchStringList`,
+  `watchBytes`, `watchDateTime`, `watchMap`, plus `watchChanges()` for the list
+  of changed keys. Backed by DataStore's `Flow` on Android and
+  `UserDefaults` change notifications on iOS, over a single shared event
+  channel.
+* **New: atomic read-modify-write.** `incrementInt` / `decrementInt`,
+  `incrementDouble`, `toggleBool`, and `compareAndSet{String,Int,Double,Bool}`.
+  Each runs as one native transaction (DataStore `edit {}` on Android, the
+  serial queue on iOS), so concurrent callers never lose an update.
+* **New: `migrateFromSharedPreferences({overwrite})`.** Imports existing
+  `shared_preferences` values (scalars and string lists) into this store and
+  returns the number of keys imported. Safe to call on every launch.
+* **New: `configure({multiProcess, appGroupId})` for multi-process storage.**
+  Opt-in and non-destructive — the default single-process store is untouched.
+  On Android, `multiProcess: true` opens a `MultiProcessDataStore` (kept in its
+  own file). On iOS, `appGroupId` backs storage with an App Group suite so app
+  extensions and other processes in the group share data.
+* Docs: expanded README with sections for all of the above.
+
 ## 1.4.0
 
 * **New: Swift Package Manager support (iOS).** The plugin now ships a
