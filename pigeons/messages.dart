@@ -11,7 +11,7 @@ import 'package:pigeon/pigeon.dart';
       package: 'in.sudhi.native_datastore',
       errorClassName: 'NativeDatastoreError',
     ),
-    swiftOut: 'ios/Classes/Messages.g.swift',
+    swiftOut: 'ios/native_datastore/Sources/native_datastore/Messages.g.swift',
     swiftOptions: SwiftOptions(
       errorClassName: 'NativeDatastoreError',
     ),

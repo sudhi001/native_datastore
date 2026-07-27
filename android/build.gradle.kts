@@ -1,5 +1,5 @@
 group = "in.sudhi.native_datastore"
-version = "1.3.2"
+version = "1.4.0"
 
 buildscript {
     val kotlinVersion = "2.2.20"
@@ -52,6 +52,6 @@ android {
 }
 
 dependencies {
-    implementation("androidx.datastore:datastore-preferences:1.1.7")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 }

@@ -4,17 +4,58 @@
 [![Pub Points](https://img.shields.io/pub/points/native_datastore)](https://pub.dev/packages/native_datastore/score)
 [![Pub Likes](https://img.shields.io/pub/likes/native_datastore)](https://pub.dev/packages/native_datastore)
 [![Pub Popularity](https://img.shields.io/pub/popularity/native_datastore)](https://pub.dev/packages/native_datastore)
-[![License: BSD-3](https://img.shields.io/badge/license-BSD--3-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Flutter](https://img.shields.io/badge/platform-android%20%7C%20iOS-brightgreen)](https://flutter.dev)
 [![GitHub issues](https://img.shields.io/github/issues/sudhi001/native_datastore)](https://github.com/sudhi001/native_datastore/issues)
 [![GitHub stars](https://img.shields.io/github/stars/sudhi001/native_datastore)](https://github.com/sudhi001/native_datastore/stargazers)
 
 A modern Flutter plugin for **persistent key-value storage**, powered by platform-native APIs.
 
-| Platform | Backend |
+**New here? In plain English:** this plugin lets you **save small pieces of data under a name
+(a "key") and read them back later — even after the app is closed and reopened.** Think of it
+as a tiny dictionary that survives app restarts. You give it a key like `"username"` and a value
+like `"sudhi"`, and it remembers.
+
+Under the hood it uses each platform's own recommended storage. You don't need to understand
+these — the plugin gives you **one simple Dart API** that works the same on both:
+
+| Platform | Backend (the native tech doing the work) |
 |----------|---------|
 | Android  | [Jetpack DataStore](https://developer.android.com/topic/libraries/architecture/datastore) (Preferences) |
 | iOS      | [UserDefaults](https://developer.apple.com/documentation/foundation/userdefaults) |
+
+### When should I use this?
+
+✅ **Great for** small values you read and write often: user settings, feature flags, theme
+choice, "has the user finished onboarding?", a saved username, a login count, timestamps.
+
+❌ **Not for** large data, lists of records, or anything you need to search or filter. Reach for
+a database like [`sqflite`](https://pub.dev/packages/sqflite),
+[`drift`](https://pub.dev/packages/drift), or [`isar`](https://pub.dev/packages/isar) instead.
+
+> 🔒 **Storing secrets** (auth tokens, passwords, encryption keys)? Use the
+> [`SecureDatastore`](#-secure-storage) class instead — it encrypts values at rest. The regular
+> `NativeDatastore` does **not** encrypt, so don't put secrets in it.
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Supported Types](#supported-types)
+- [Why not SharedPreferences?](#why-not-sharedpreferences)
+- [Getting Started](#getting-started) — install and your first read/write
+- [Full Example](#full-example) — a complete, copy-paste app
+- [Error Handling](#error-handling)
+- [Handling Null Values](#handling-null-values)
+- [API Reference](#api-reference)
+- [🔒 Secure Storage](#-secure-storage) — for tokens and secrets
+- [Storage Details](#storage-details)
+- [Migrating from shared_preferences](#migrating-from-shared_preferences)
+- [Platform Details](#platform-details)
+- [Requirements](#requirements)
+- [Advanced Topics](#advanced-topics) — resilience & multi-process caveats (safe to skip at first)
+- [Contributing](#contributing)
 
 ---
 
@@ -59,6 +100,10 @@ If you're using `SharedPreferences` (or Flutter's `shared_preferences` which wra
 | Type safety | Returns defaults on type mismatch | Typed keys with compile-time safety |
 | Consistency | No transactional guarantees | Atomic read-modify-write |
 
+> **Jargon check —** *ANR* means "Application Not Responding": the freeze dialog Android shows
+> (and may kill your app for) when the UI thread is blocked too long. Doing disk work
+> asynchronously, as this plugin does, avoids it.
+
 > **Google's recommendation:** *"Prefer DataStore over SharedPreferences."*
 > -- [Android Developers Docs](https://developer.android.com/topic/libraries/architecture/datastore)
 
@@ -68,32 +113,39 @@ If you're using `SharedPreferences` (or Flutter's `shared_preferences` which wra
 
 ### 1. Install
 
-Add to your `pubspec.yaml`:
+The easiest way — run this in your project folder:
+
+```bash
+flutter pub add native_datastore
+```
+
+Or add it to your `pubspec.yaml` manually and run `flutter pub get`:
 
 ```yaml
 dependencies:
-  native_datastore: ^1.2.0
+  native_datastore: ^1.4.0
 ```
 
-Then run:
-
-```bash
-flutter pub get
-```
+> No extra setup needed — no changes to `AndroidManifest.xml`, `Info.plist`, or Gradle files.
+> It works out of the box on Android and iOS.
 
 ### 2. Import
 
 ```dart
 import 'package:native_datastore/native_datastore.dart';
 
-// Also needed for Uint8List:
+// Only needed if you use setBytes / getBytes (binary data):
 import 'dart:typed_data';
 ```
 
 ### 3. Use
 
+> **Important for beginners:** every read and write is **asynchronous** — it returns a `Future`,
+> so you must `await` it (inside an `async` function). This is what keeps your UI smooth. If you
+> forget `await`, you'll get a `Future` object instead of your value.
+
 ```dart
-final datastore = NativeDatastore();
+final datastore = NativeDatastore();  // create it once; reuse it anywhere
 
 // -- Write --
 await datastore.setString('username', 'sudhi');
@@ -124,6 +176,75 @@ final exists   = await datastore.containsKey('username');     // true
 await datastore.remove('username');   // Remove a single key
 await datastore.clear();              // Remove all data
 ```
+
+---
+
+## Full Example
+
+A complete, runnable app you can paste into `lib/main.dart`. It saves a counter that
+**survives app restarts** — close the app fully, reopen it, and the number is still there.
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:native_datastore/native_datastore.dart';
+
+void main() => runApp(const MyApp());
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      const MaterialApp(home: CounterPage());
+}
+
+class CounterPage extends StatefulWidget {
+  const CounterPage({super.key});
+
+  @override
+  State<CounterPage> createState() => _CounterPageState();
+}
+
+class _CounterPageState extends State<CounterPage> {
+  final _datastore = NativeDatastore();
+  int _count = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCount(); // read the saved value when the screen opens
+  }
+
+  Future<void> _loadCount() async {
+    // getInt returns null if the key was never saved, so default to 0.
+    final saved = await _datastore.getInt('count') ?? 0;
+    setState(() => _count = saved);
+  }
+
+  Future<void> _increment() async {
+    final next = _count + 1;
+    await _datastore.setInt('count', next); // save it (persists to disk)
+    setState(() => _count = next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('native_datastore demo')),
+      body: Center(
+        child: Text('Count: $_count', style: const TextStyle(fontSize: 32)),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _increment,
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+```
+
+> A larger example (every data type, secure storage, error handling) lives in the
+> [`example/`](example/) folder of the repository.
 
 ---
 
@@ -217,7 +338,7 @@ if (await datastore.containsKey('profile')) {
 
 ---
 
-## Secure Storage
+## 🔒 Secure Storage
 
 For secrets (auth tokens, refresh tokens, encryption keys) use the
 `SecureDatastore` class, which encrypts values at rest using platform key
@@ -323,24 +444,47 @@ final value = await datastore.getString('key');
 - Numeric getters (`getBool`, `getInt`, `getDouble`, `getDateTime`) are
   strict: they return `null` when the stored value's underlying type does
   not match (no silent coercion across types).
-- Minimum iOS: **12.0**
+- Minimum iOS: **13.0**
+- Ships both a **Swift Package Manager** manifest (`Package.swift`) and a
+  **CocoaPods** `podspec`, so it works whether or not your app has enabled
+  Flutter's Swift Package Manager integration — no configuration needed.
+- Includes a **privacy manifest** (`PrivacyInfo.xcprivacy`) declaring the
+  `UserDefaults` required-reason API for App Store submission.
 
 ---
 
-## Resilience on aggressive-kill OEMs
+## Requirements
 
-Memory- and battery-optimised Android skins (MIUI, ColorOS, OriginOS,
-HyperOS, ColorOS-derived ROMs, Realme UI, FuntouchOS, etc.) regularly
-terminate background processes without warning. `native_datastore` is
-built to survive that:
+| Dependency | Minimum Version |
+|------------|-----------------|
+| Flutter    | 3.3.0           |
+| Dart SDK   | 3.11.4          |
+| Android    | API 21 (5.0)    |
+| iOS        | 13.0            |
+
+---
+
+## Advanced Topics
+
+> **You do not need to read this to use the plugin.** These sections explain how
+> `native_datastore` behaves under difficult real-world conditions. If you're just getting
+> started, skip ahead to [Contributing](#contributing) — come back when you're shipping to
+> production or investigating a tricky data-loss report.
+
+### Surviving aggressive app-killing (Android)
+
+Some Android phone brands (Xiaomi/MIUI, OPPO/ColorOS, Vivo/OriginOS, HyperOS, Realme UI,
+etc.) aggressively shut down apps in the background to save memory and battery — sometimes
+mid-write. A naive storage layer can lose or corrupt data when this happens.
+`native_datastore` is built to survive it:
 
 - **Atomic writes.** Each write goes through Jetpack DataStore, which uses
   the filesystem's atomic rename to replace the prefs file. A process kill
   mid-write either commits the full new file or leaves the previous file
   intact -- never a half-merged record.
 - **Durable acknowledgements.** `await datastore.setX(...)` only resolves
-  after the underlying `edit { }` block has fsync'd, so a successfully
-  awaited write is on disk before the next line of Dart runs.
+  after the write has been flushed to physical disk (an `fsync`), so once your
+  `await` returns, the value is genuinely saved — not just queued in memory.
 - **Auto-recovery from corruption.** If a kill lands inside the fsync
   window and the file ends up unreadable, the corruption handler replaces
   it with empty preferences on the next read. The app keeps working --
@@ -373,7 +517,7 @@ or a small `SharedPreferences` file dedicated to that process.
 
 ---
 
-## Library Size
+### Library Size
 
 The library is lightweight with a minimal footprint:
 
@@ -391,20 +535,23 @@ The library is lightweight with a minimal footprint:
 
 ---
 
-## Requirements
-
-| Dependency | Minimum Version |
-|------------|-----------------|
-| Flutter    | 3.3.0           |
-| Dart SDK   | 3.11.4          |
-| Android    | API 21 (5.0)    |
-| iOS        | 12.0            |
-
----
-
 ## Contributing
 
 Contributions are welcome! Please open an [issue](https://github.com/sudhi001/native_datastore/issues) or submit a pull request.
+
+### Regenerating platform bindings
+
+The Dart/Kotlin/Swift message channel bindings are generated with
+[Pigeon](https://pub.dev/packages/pigeon). Always regenerate them with:
+
+```bash
+./tool/generate_pigeon.sh
+```
+
+Do **not** run `dart run pigeon` directly. The Android package
+(`in.sudhi.native_datastore`) starts with `in`, a reserved Kotlin keyword that
+Pigeon does not escape, so the raw output fails to compile. The wrapper runs
+Pigeon and then backtick-escapes the `package` declaration automatically.
 
 ---
 
@@ -438,4 +585,9 @@ git push --delete origin v1.3.1
 
 ## License
 
-BSD 3-Clause License -- see the [LICENSE](LICENSE) file for details.
+Licensed under the **Apache License, Version 2.0** -- see the [LICENSE](LICENSE) and
+[NOTICE](NOTICE) files for details. The Apache-2.0 license is permissive (free for commercial
+and personal use, modification, and redistribution) and includes an explicit patent grant,
+making it safe for enterprise adoption.
+
+Copyright 2026 Sudhi S ([sudhi.in](https://sudhi.in)).

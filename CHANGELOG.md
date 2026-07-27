@@ -1,3 +1,33 @@
+## 1.4.0
+
+* **New: Swift Package Manager support (iOS).** The plugin now ships a
+  `Package.swift` alongside the existing CocoaPods `podspec`, so apps that have
+  opted into Flutter's Swift Package Manager integration resolve
+  `native_datastore` through SPM. **CocoaPods continues to work unchanged** —
+  both build systems point at the same sources under
+  `ios/native_datastore/Sources/native_datastore/`. No action is required from
+  existing CocoaPods users.
+* **New: iOS privacy manifest.** Added `PrivacyInfo.xcprivacy` declaring the
+  `UserDefaults` required-reason API (`NSPrivacyAccessedAPICategoryUserDefaults`,
+  reason `CA92.1`), satisfying Apple's App Store privacy-manifest requirement.
+* **Raised iOS minimum deployment target to 13.0** (from 12.0) to match the
+  minimum supported by current Flutter stable. iOS 12 is no longer supported by
+  the Flutter framework.
+* **Android dependency updates:** `androidx.datastore:datastore-preferences`
+  `1.1.7 → 1.2.1` and `kotlinx-coroutines-android` `1.7.3 → 1.11.0`.
+* **Fixed: Android build failure on current Kotlin toolchains.** The Pigeon-
+  generated `Messages.g.kt` declared `package in.sudhi.native_datastore`
+  without escaping `in`, a reserved Kotlin keyword, which fails to compile on
+  Kotlin 2.x (`Package name must be a '.'-separated identifier list`). The
+  generated file is now escaped (`` package `in`.sudhi.native_datastore ``).
+  A new `tool/generate_pigeon.sh` wrapper regenerates the bindings and applies
+  this escape automatically — use it instead of `dart run pigeon`.
+* Tooling: `pigeon` `26 → 27` (bindings regenerated), `meta` `^1.17.0 → ^1.18.0`.
+* **License changed from BSD-3-Clause to Apache License 2.0.** Both are permissive;
+  Apache-2.0 adds an explicit patent grant and trademark protection, making the package
+  safer to adopt for enterprise/corporate projects. Added a `NOTICE` file per Apache
+  convention. This is not a restriction — existing usage remains free and unaffected.
+
 ## 1.3.2
 
 * Fixed OIDC authentication in the GitHub Actions release workflow. The publish
