@@ -47,6 +47,7 @@ a database like [`sqflite`](https://pub.dev/packages/sqflite),
 - [Supported Types](#supported-types)
 - [Why not SharedPreferences?](#why-not-sharedpreferences)
 - [Getting Started](#getting-started) — install and your first read/write
+- [See it in action](#see-it-in-action) — the example app running
 - [Cheat Sheet](#cheat-sheet) — the whole API at a glance
 - [Full Example](#full-example) — a complete, copy-paste app
 - [Error Handling](#error-handling)
@@ -187,6 +188,16 @@ final exists   = await datastore.containsKey('username');     // true
 await datastore.remove('username');   // Remove a single key
 await datastore.clear();              // Remove all data
 ```
+
+---
+
+## See it in action
+
+The bundled [example app](example/) exercising both stores on a device — writing
+every type on the **Regular** tab, then saving encrypted secrets on the
+**Secure** tab:
+
+![Screen recording of the example app: Set All Types then Get All on the Regular tab, then Save Sample Secrets and Refresh Keys on the Secure tab](https://raw.githubusercontent.com/sudhi001/native_datastore/main/doc/assets/example-demo.gif)
 
 ---
 
