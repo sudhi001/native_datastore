@@ -24,6 +24,8 @@ these — the plugin gives you **one simple Dart API** that works the same on bo
 | Android  | [Jetpack DataStore](https://developer.android.com/topic/libraries/architecture/datastore) (Preferences) |
 | iOS      | [UserDefaults](https://developer.apple.com/documentation/foundation/userdefaults) |
 
+![How native_datastore works: one Dart API bridged via Pigeon to Jetpack DataStore on Android and UserDefaults on iOS](https://raw.githubusercontent.com/sudhi001/native_datastore/main/doc/assets/architecture.gif)
+
 ### When should I use this?
 
 ✅ **Great for** small values you read and write often: user settings, feature flags, theme
@@ -345,6 +347,8 @@ if (await datastore.containsKey('profile')) {
 ---
 
 ## Reactive Observation (`watch`)
+
+![A write to a key flows through the store and is pushed to a watchInt() Stream, which rebuilds the UI automatically](https://raw.githubusercontent.com/sudhi001/native_datastore/main/doc/assets/reactive-watch.gif)
 
 Instead of reading a value once, you can **watch** a key and rebuild your UI
 automatically whenever it changes. Each `watch*` method returns a `Stream` that
