@@ -433,6 +433,8 @@ observe the whole store.
 
 ## Atomic Operations
 
+![Two writers each add +1: manual read-then-write ends at 6 (one update lost), while incrementInt() is atomic and ends at 7](https://raw.githubusercontent.com/sudhi001/native_datastore/main/doc/assets/atomic-no-lost-updates.gif)
+
 When several parts of your app update the same value, a plain
 read-then-write can lose updates. These operations run as a **single native
 transaction**, so they're safe under concurrency:
