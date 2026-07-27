@@ -1,3 +1,9 @@
+## 1.5.2
+
+* Documentation only — added a fourth animated diagram to the README
+  illustrating why the atomic operations prevent lost updates (manual
+  read-then-write vs `incrementInt()` under two concurrent writers).
+
 ## 1.5.1
 
 * Documentation only — no code or API changes. Expanded the README to help
