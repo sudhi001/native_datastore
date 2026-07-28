@@ -8,8 +8,16 @@
 [![Flutter](https://img.shields.io/badge/platform-android%20%7C%20iOS-brightgreen)](https://flutter.dev)
 [![GitHub issues](https://img.shields.io/github/issues/sudhi001/native_datastore)](https://github.com/sudhi001/native_datastore/issues)
 [![GitHub stars](https://img.shields.io/github/stars/sudhi001/native_datastore)](https://github.com/sudhi001/native_datastore/stargazers)
+[![Wiki](https://img.shields.io/badge/docs-wiki-blue)](https://github.com/sudhi001/native_datastore/wiki)
 
 A modern Flutter plugin for **persistent key-value storage**, powered by platform-native APIs.
+
+> 📖 **Task-focused guides live in the [Wiki](https://github.com/sudhi001/native_datastore/wiki)** —
+> [Getting Started](https://github.com/sudhi001/native_datastore/wiki/Getting-Started),
+> [Secure Storage](https://github.com/sudhi001/native_datastore/wiki/Secure-Storage),
+> [Multi-Process Access](https://github.com/sudhi001/native_datastore/wiki/Multi-Process-Access),
+> [Troubleshooting](https://github.com/sudhi001/native_datastore/wiki/Troubleshooting). This README
+> stays the canonical, full API reference.
 
 **New here? In plain English:** this plugin lets you **save small pieces of data under a name
 (a "key") and read them back later — even after the app is closed and reopened.** Think of it
