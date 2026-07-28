@@ -1,3 +1,13 @@
+## 1.6.1
+
+* Documentation only — no code or API changes.
+  * README now links the project [Wiki](https://github.com/sudhi001/native_datastore/wiki)
+    (task-focused guides: Getting Started, Secure Storage, Multi-Process Access,
+    Troubleshooting) via a badge and a guides callout, while the README remains
+    the canonical full API reference.
+  * Added `SECURITY.md` describing the private vulnerability-reporting policy
+    and the secure-storage threat model.
+
 ## 1.6.0
 
 * **New: `SecureDatastore.configure({multiProcess, appGroupId})` for
