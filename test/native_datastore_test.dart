@@ -788,6 +788,7 @@ void main() {
         'clear',
         'getKeys',
         'containsKey',
+        'configure',
       ]) {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMessageHandler('$secureChannelPrefix$method', null);
@@ -929,6 +930,23 @@ void main() {
       mockSecure('getString', 'injected-secret');
       final s = SecureDatastore.withApi(SecureDatastoreApi());
       expect(await s.getString('k'), 'injected-secret');
+    });
+
+    test('configure completes', () async {
+      mockSecure('configure', null);
+      await secure.configure(multiProcess: true, appGroupId: 'group.test');
+    });
+
+    test('configure defaults are non-destructive', () async {
+      mockSecure('configure', null);
+      await secure.configure();
+    });
+
+    test('configure surfaces platform errors', () async {
+      mockSecureError('configure', errorMessage: 'boom');
+      final e = await _expectException(() => secure.configure());
+      expect(e.message, contains('secure configure'));
+      expect(e.cause, isA<PlatformException>());
     });
   });
 

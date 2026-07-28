@@ -165,4 +165,15 @@ abstract class SecureDatastoreApi {
 
   @async
   bool containsKey(String key);
+
+  // ---- Configuration ----
+
+  /// Configures the secure storage backend. Must be called before the first
+  /// read or write. When [multiProcess] is true (Android) the encrypted store
+  /// is opened in multi-process mode; [appGroupId], when non-null (iOS), is
+  /// used as the Keychain access group so extensions/processes sharing it see
+  /// the same secrets. Both default off, leaving the single-process store
+  /// untouched.
+  @async
+  void configure(bool multiProcess, String? appGroupId);
 }

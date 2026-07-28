@@ -141,6 +141,75 @@ void main() {
     expect(await secure.getKeys(), isEmpty);
   });
 
+  // Exercises the full SecureDatastore surface under a given configuration so
+  // both single-process (default) and multi-process modes get identical
+  // coverage. On Android `multiProcess: true` switches to a
+  // MultiProcessDataStore in a separate file; on iOS `multiProcess` is a no-op
+  // (cross-process sharing there uses a Keychain access group instead). Either
+  // way every operation must behave the same.
+  Future<void> runSecureRoundTrip(SecureDatastore secure, String tag) async {
+    await secure.clear();
+    expect(await secure.getKeys(), isEmpty, reason: '$tag: starts empty');
+
+    // String round-trip.
+    await secure.setString('token', 'secret-$tag');
+    expect(await secure.getString('token'), 'secret-$tag', reason: tag);
+
+    // Bytes round-trip.
+    final key = Uint8List.fromList(List.generate(16, (i) => (255 - i) & 0xff));
+    await secure.setBytes('key', key);
+    expect(await secure.getBytes('key'), key, reason: tag);
+
+    // String and bytes under one user-key are independent buckets.
+    await secure.setString('mixed', 'as-string');
+    await secure.setBytes('mixed', Uint8List.fromList([7, 8, 9]));
+    expect(await secure.getString('mixed'), 'as-string', reason: tag);
+    expect(await secure.getBytes('mixed'), Uint8List.fromList([7, 8, 9]),
+        reason: tag);
+
+    // Introspection.
+    expect(await secure.containsKey('token'), true, reason: tag);
+    expect(await secure.containsKey('nope'), false, reason: tag);
+    expect(await secure.getKeys(), containsAll(['token', 'key', 'mixed']),
+        reason: tag);
+
+    // remove clears both buckets for a user-key.
+    expect(await secure.remove('mixed'), true, reason: tag);
+    expect(await secure.getString('mixed'), isNull, reason: tag);
+    expect(await secure.getBytes('mixed'), isNull, reason: tag);
+    expect(await secure.remove('nope'), false, reason: tag);
+
+    // Missing keys read back null.
+    expect(await secure.getString('absent'), isNull, reason: tag);
+    expect(await secure.getBytes('absent'), isNull, reason: tag);
+
+    await secure.clear();
+    expect(await secure.getKeys(), isEmpty, reason: '$tag: cleared');
+  }
+
+  testWidgets('SecureDatastore single-process (default) round-trip',
+      (WidgetTester tester) async {
+    final secure = SecureDatastore();
+    // Default: no configure() call — the standard single-process store.
+    await runSecureRoundTrip(secure, 'single-process');
+  });
+
+  testWidgets('SecureDatastore multi-process configure round-trip',
+      (WidgetTester tester) async {
+    final secure = SecureDatastore();
+
+    // Opt into multi-process. Must be safe to call before any read/write. We
+    // deliberately do NOT pass an appGroupId: on iOS that sets a Keychain
+    // access group requiring the Keychain Sharing entitlement, which this bare
+    // example app does not declare.
+    await secure.configure(multiProcess: true);
+    await runSecureRoundTrip(secure, 'multi-process');
+
+    // Reverting to the default store must also be non-destructive.
+    await secure.configure();
+    await runSecureRoundTrip(secure, 'after-revert');
+  });
+
   testWidgets('atomic operations', (WidgetTester tester) async {
     final datastore = NativeDatastore();
     await datastore.clear();

@@ -710,6 +710,13 @@ protocol SecureDatastoreApi {
   func clear(completion: @escaping (Result<Void, Error>) -> Void)
   func getKeys(completion: @escaping (Result<[String], Error>) -> Void)
   func containsKey(key: String, completion: @escaping (Result<Bool, Error>) -> Void)
+  /// Configures the secure storage backend. Must be called before the first
+  /// read or write. When [multiProcess] is true (Android) the encrypted store
+  /// is opened in multi-process mode; [appGroupId], when non-null (iOS), is
+  /// used as the Keychain access group so extensions/processes sharing it see
+  /// the same secrets. Both default off, leaving the single-process store
+  /// untouched.
+  func configure(multiProcess: Bool, appGroupId: String?, completion: @escaping (Result<Void, Error>) -> Void)
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -851,6 +858,30 @@ class SecureDatastoreApiSetup {
       }
     } else {
       containsKeyChannel.setMessageHandler(nil)
+    }
+    /// Configures the secure storage backend. Must be called before the first
+    /// read or write. When [multiProcess] is true (Android) the encrypted store
+    /// is opened in multi-process mode; [appGroupId], when non-null (iOS), is
+    /// used as the Keychain access group so extensions/processes sharing it see
+    /// the same secrets. Both default off, leaving the single-process store
+    /// untouched.
+    let configureChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.SecureDatastoreApi.configure\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      configureChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let multiProcessArg = args[0] as! Bool
+        let appGroupIdArg: String? = nilOrValue(args[1])
+        api.configure(multiProcess: multiProcessArg, appGroupId: appGroupIdArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      configureChannel.setMessageHandler(nil)
     }
   }
 }

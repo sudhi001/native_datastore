@@ -813,4 +813,28 @@ class SecureDatastoreApi {
     ;
     return pigeonVar_replyValue! as bool;
   }
+
+  /// Configures the secure storage backend. Must be called before the first
+  /// read or write. When [multiProcess] is true (Android) the encrypted store
+  /// is opened in multi-process mode; [appGroupId], when non-null (iOS), is
+  /// used as the Keychain access group so extensions/processes sharing it see
+  /// the same secrets. Both default off, leaving the single-process store
+  /// untouched.
+  Future<void> configure(bool multiProcess, String? appGroupId) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.native_datastore.SecureDatastoreApi.configure$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[multiProcess, appGroupId]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
 }

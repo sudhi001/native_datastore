@@ -1,3 +1,31 @@
+## 1.6.0
+
+* **New: `SecureDatastore.configure({multiProcess, appGroupId})` for
+  cross-process secrets.** Brings the regular store's multi-process support to
+  encrypted storage. Opt-in and non-destructive — the default single-process
+  secure store is untouched.
+  * On Android, `multiProcess: true` opens the encrypted store with a
+    `MultiProcessDataStore` in its own file
+    (`native_datastore_secure_mp.json`). The AndroidKeyStore key is already
+    process-agnostic, so only the file backing changes; existing secrets in the
+    default file are not migrated.
+  * On iOS, `appGroupId` is used as the Keychain access group
+    (`kSecAttrAccessGroup`) so an app and its extensions can share secrets.
+    Requires the Keychain Sharing capability in Xcode. (This is a Keychain
+    access group string, distinct from the App Group suite used by the regular
+    store.)
+* **Example:** the Secure tab now has a **Multi-process access** toggle that
+  calls `configure(multiProcess:)` live.
+* **Tests:** end-to-end integration coverage for the secure store in both
+  single-process and multi-process modes (`plugin_integration_test.dart`),
+  verified on an iOS simulator and an Android emulator.
+* **Benchmarks:** a runnable harness (`integration_test/benchmark_test.dart`)
+  measuring regular vs secure set/get latency, with an illustrative results
+  table in the README.
+* **Docs:** README multi-process section and FAQ updated for `SecureDatastore`;
+  new animated encryption diagram and a real secure-storage screen recording;
+  a "what it protects" threat-model note.
+
 ## 1.5.3
 
 * Documentation only — added a real screen recording of the bundled example app

@@ -18,6 +18,12 @@ final class KeychainStore {
     static let bytesBucket = "__bytes__:"
     static let typedBuckets = [stringBucket, bytesBucket]
 
+    /// Keychain access group (`kSecAttrAccessGroup`) applied to every query.
+    /// Set by `configure` so an app and its extensions/processes sharing the
+    /// group see the same secrets. `nil` scopes items to this app only.
+    /// Requires the "Keychain Sharing" capability enabled in Xcode.
+    var accessGroup: String?
+
     enum KeychainError: LocalizedError {
         case status(OSStatus)
 
@@ -30,12 +36,20 @@ final class KeychainStore {
         }
     }
 
-    func set(_ data: Data, account: String) throws {
-        let query: [String: Any] = [
+    /// Base query scoped to this plugin's service (and access group, when set).
+    /// Every method builds on this so the access group is applied uniformly.
+    private func baseQuery(account: String? = nil) -> [String: Any] {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Self.service,
-            kSecAttrAccount as String: account,
         ]
+        if let account { query[kSecAttrAccount as String] = account }
+        if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
+        return query
+    }
+
+    func set(_ data: Data, account: String) throws {
+        let query = baseQuery(account: account)
         let attributes: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrAccessible as String: Self.accessible,
@@ -53,13 +67,9 @@ final class KeychainStore {
     }
 
     func get(account: String) throws -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
+        var query = baseQuery(account: account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
@@ -69,11 +79,7 @@ final class KeychainStore {
 
     /// Returns `true` if an item existed and was removed.
     func remove(account: String) throws -> Bool {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.service,
-            kSecAttrAccount as String: account,
-        ]
+        let query = baseQuery(account: account)
         let status = SecItemDelete(query as CFDictionary)
         if status == errSecSuccess { return true }
         if status == errSecItemNotFound { return false }
@@ -81,10 +87,7 @@ final class KeychainStore {
     }
 
     func clear() throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.service,
-        ]
+        let query = baseQuery()
         let status = SecItemDelete(query as CFDictionary)
         if status == errSecSuccess || status == errSecItemNotFound { return }
         throw KeychainError.status(status)
@@ -92,12 +95,9 @@ final class KeychainStore {
 
     /// All Keychain account names under this service, including bucket prefixes.
     func allAccounts() throws -> [String] {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.service,
-            kSecMatchLimit as String: kSecMatchLimitAll,
-            kSecReturnAttributes as String: true,
-        ]
+        var query = baseQuery()
+        query[kSecMatchLimit as String] = kSecMatchLimitAll
+        query[kSecReturnAttributes as String] = true
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound { return [] }
@@ -107,13 +107,9 @@ final class KeychainStore {
     }
 
     func contains(account: String) throws -> Bool {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: false,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
+        var query = baseQuery(account: account)
+        query[kSecReturnData as String] = false
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
         let status = SecItemCopyMatching(query as CFDictionary, nil)
         if status == errSecSuccess { return true }
         if status == errSecItemNotFound { return false }
@@ -234,6 +230,17 @@ final class SecureDatastorePlugin: NSObject, SecureDatastoreApi {
                 }
             }
             return false
+        }
+    }
+
+    // MARK: - Configuration
+
+    func configure(multiProcess: Bool, appGroupId: String?, completion: @escaping (Result<Void, Error>) -> Void) {
+        // `multiProcess` is an Android-only concept. On iOS, cross-process
+        // sharing (e.g. with an app extension) is achieved via a Keychain
+        // access group, so `appGroupId` is used as the access group here.
+        onQueue(completion) { plugin in
+            plugin.keychain.accessGroup = appGroupId
         }
     }
 }
