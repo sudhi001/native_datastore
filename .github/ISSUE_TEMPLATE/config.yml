@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Question or usage help
+    url: https://github.com/sudhi001/native_datastore/discussions
+    about: For how-to questions and general discussion, please use Discussions.
+  - name: 📖 Documentation
+    url: https://github.com/sudhi001/native_datastore#readme
+    about: The README covers the full API, examples, FAQ, and platform details.

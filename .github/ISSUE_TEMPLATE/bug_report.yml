@@ -1,0 +1,100 @@
+name: 🐛 Bug report
+description: Something isn't working as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! Please fill in as much as you can —
+        a minimal reproduction is the single most helpful thing.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched [existing issues](https://github.com/sudhi001/native_datastore/issues) and this isn't a duplicate.
+          required: true
+        - label: I'm using the latest version, or have noted below why I can't upgrade.
+          required: true
+
+  - type: dropdown
+    id: api
+    attributes:
+      label: Which API?
+      options:
+        - NativeDatastore (regular)
+        - SecureDatastore (encrypted)
+        - Both / not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platforms
+    attributes:
+      label: Affected platform(s)
+      multiple: true
+      options:
+        - Android
+        - iOS
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: native_datastore version
+      placeholder: e.g. 1.6.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: flutter-doctor
+    attributes:
+      label: flutter doctor -v
+      description: Paste the full output (or at least the Flutter/Dart versions).
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device / OS version
+      placeholder: e.g. Pixel 7 (Android 14), iPhone 15 (iOS 17.5), iOS Simulator
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: A minimal code snippet or repo is ideal.
+      placeholder: |
+        1. await datastore.setString('k', 'v');
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include any exception message / stack trace.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (optional)
+      description: Relevant `flutter run` / logcat / Console output.
+      render: shell
