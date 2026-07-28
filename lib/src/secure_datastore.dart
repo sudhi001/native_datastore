@@ -174,4 +174,27 @@ class SecureDatastore {
     _validateKey(key);
     return _guard('secure containsKey("$key")', () => _api.containsKey(key));
   }
+
+  /// Configures the secure storage backend for cross-process access. Call once
+  /// at startup, before any read or write.
+  ///
+  /// * [multiProcess] (Android) opens the encrypted store in multi-process mode
+  ///   so it can be safely accessed from more than one process. Because it uses
+  ///   a separate file, existing secrets in the default store are *not* visible
+  ///   through it. Ignored on iOS.
+  /// * [appGroupId] (iOS) is used as the Keychain access group so app extensions
+  ///   and other processes sharing the group can read the same secrets. Requires
+  ///   the "Keychain Sharing" capability enabled in Xcode; note this is a
+  ///   Keychain access group string, which differs from the App Group suite used
+  ///   by [NativeDatastore]. Ignored on Android.
+  ///
+  /// Both default off, leaving the standard single-process store in place.
+  ///
+  /// Throws [NativeDatastoreException] if the platform call fails.
+  Future<void> configure({bool multiProcess = false, String? appGroupId}) {
+    return _guard(
+      'secure configure',
+      () => _api.configure(multiProcess, appGroupId),
+    );
+  }
 }

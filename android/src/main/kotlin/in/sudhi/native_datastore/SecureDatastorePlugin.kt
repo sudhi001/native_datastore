@@ -6,12 +6,14 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.MultiProcessDataStoreFactory
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import java.io.File
 import java.security.KeyStore
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.Cipher
@@ -115,6 +117,36 @@ internal class SecureDatastorePlugin(
 
     private val crypto: SecureCrypto by lazy { SecureCrypto(KEY_ALIAS) }
 
+    // Set by `configure`; selects which backing store operations use.
+    @Volatile
+    private var multiProcessEnabled = false
+
+    // Lazily-created multi-process store, kept in its own file so enabling
+    // multi-process mode never touches the default single-process secrets.
+    @Volatile
+    private var mpStore: DataStore<Preferences>? = null
+
+    /**
+     * Returns the active backing store: the default single-process encrypted
+     * DataStore, or — when [configure] enabled multi-process mode — a
+     * [MultiProcessDataStoreFactory] store in a separate file. The AndroidKeyStore
+     * key is process-agnostic, so only the DataStore file backing changes.
+     */
+    private fun secureStore(): DataStore<Preferences> {
+        if (!multiProcessEnabled) return context.secureDataStore
+        return mpStore ?: synchronized(this) {
+            mpStore ?: MultiProcessDataStoreFactory.create(
+                serializer = PreferencesJsonSerializer,
+                corruptionHandler = ReplaceFileCorruptionHandler {
+                    emptyPreferences()
+                },
+                produceFile = {
+                    File(context.filesDir, "datastore/native_datastore_secure_mp.json")
+                }
+            ).also { mpStore = it }
+        }
+    }
+
     private fun requireApi23() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             throw UnsupportedOperationException(
@@ -161,13 +193,13 @@ internal class SecureDatastorePlugin(
     private suspend fun writeEncrypted(prefKey: String, plaintext: ByteArray) {
         val encrypted = crypto.encrypt(plaintext)
         val encoded = Base64.encodeToString(encrypted, Base64.NO_WRAP)
-        context.secureDataStore.edit { prefs ->
+        secureStore().edit { prefs ->
             prefs[stringPreferencesKey(prefKey)] = encoded
         }
     }
 
     private suspend fun readEncrypted(prefKey: String): ByteArray? {
-        val prefs = context.secureDataStore.data.first()
+        val prefs = secureStore().data.first()
         val encoded = prefs[stringPreferencesKey(prefKey)] ?: return null
         val encrypted = Base64.decode(encoded, Base64.NO_WRAP)
         return crypto.decrypt(encrypted)
@@ -208,7 +240,7 @@ internal class SecureDatastorePlugin(
         launch(callback) {
             val candidates = TYPED_BUCKETS.map { it + key }.toSet()
             var removed = false
-            context.secureDataStore.edit { prefs ->
+            secureStore().edit { prefs ->
                 val matching = prefs.asMap().keys.filter { it.name in candidates }
                 for (prefKey in matching) {
                     @Suppress("UNCHECKED_CAST")
@@ -222,13 +254,13 @@ internal class SecureDatastorePlugin(
 
     override fun clear(callback: (Result<Unit>) -> Unit) {
         launch(callback) {
-            context.secureDataStore.edit { it.clear() }
+            secureStore().edit { it.clear() }
         }
     }
 
     override fun getKeys(callback: (Result<List<String>>) -> Unit) {
         launch(callback) {
-            val prefs = context.secureDataStore.data.first()
+            val prefs = secureStore().data.first()
             prefs.asMap().keys
                 .map { prefKey ->
                     var realKey = prefKey.name
@@ -246,9 +278,22 @@ internal class SecureDatastorePlugin(
 
     override fun containsKey(key: String, callback: (Result<Boolean>) -> Unit) {
         launch(callback) {
-            val prefs = context.secureDataStore.data.first()
+            val prefs = secureStore().data.first()
             val candidates = TYPED_BUCKETS.map { it + key }.toSet()
             prefs.asMap().keys.any { it.name in candidates }
+        }
+    }
+
+    // ---------- Configuration ----------
+
+    override fun configure(
+        multiProcess: Boolean,
+        appGroupId: String?,
+        callback: (Result<Unit>) -> Unit
+    ) {
+        // appGroupId is used as an iOS Keychain access group; ignored on Android.
+        launch(callback) {
+            multiProcessEnabled = multiProcess
         }
     }
 }

@@ -57,6 +57,7 @@ a database like [`sqflite`](https://pub.dev/packages/sqflite),
 - [Atomic Operations](#atomic-operations) — counters, flags, compare-and-set
 - [Which method should I use?](#which-method-should-i-use) — quick decision guide
 - [🔒 Secure Storage](#-secure-storage) — for tokens and secrets
+- [⚡ Benchmarks](#-benchmarks) — regular vs secure, and how to run your own
 - [Storage Details](#storage-details)
 - [Migrating from shared_preferences](#migrating-from-shared_preferences)
 - [Platform Details](#platform-details)
@@ -495,6 +496,8 @@ Available: `incrementInt`, `decrementInt`, `incrementDouble`, `toggleBool`, and
 
 ## 🔒 Secure Storage
 
+![Animated diagram: a plaintext token leaves your Dart code, is encrypted with an AES-256-GCM key held in the AndroidKeyStore / iOS Keychain, and only ciphertext lands on disk; with configure() a second process reads the same encrypted store](https://raw.githubusercontent.com/sudhi001/native_datastore/main/doc/assets/secure-storage.gif)
+
 For secrets (auth tokens, refresh tokens, encryption keys) use the
 `SecureDatastore` class, which encrypts values at rest using platform key
 management:
@@ -529,6 +532,84 @@ Surface is intentionally minimal: `String` and `Uint8List` only, plus
 callers needing larger payloads should encrypt themselves and store via the
 filesystem. Errors flow through the same `NativeDatastoreException` used by
 `NativeDatastore`.
+
+### The secure store in action
+
+![Screen recording of the demo: enabling multi-process access, saving encrypted secrets, adding one more, and clearing — keys are listed but values stay encrypted at rest](https://raw.githubusercontent.com/sudhi001/native_datastore/main/doc/assets/secure-demo.gif)
+
+*Real `SecureDatastore` operations, auto-played from
+[`example/lib/demo_main.dart`](example/lib/demo_main.dart) — run it with
+`flutter run -t lib/demo_main.dart`.*
+
+### Sharing secrets across processes
+
+`SecureDatastore` supports the same opt-in `configure` as `NativeDatastore` for
+background services and app extensions — see
+[Multi-process access](#multi-process-access-opt-in):
+
+```dart
+await SecureDatastore().configure(
+  multiProcess: true,                  // Android: multi-process encrypted store
+  appGroupId: 'TEAMID.com.you.shared', // iOS: Keychain access group
+);
+```
+
+### What it protects (and what it doesn't)
+
+- ✅ **At-rest confidentiality.** Values are encrypted with a
+  hardware-backed key (Android) or held in the system Keychain (iOS), so a
+  filesystem/backup dump does not reveal them.
+- ✅ **Not in backups / not device-migrated.** iOS uses
+  `…ThisDeviceOnly`; the Android key lives in the AndroidKeyStore and never
+  leaves the device.
+- ⚠️ **Not a substitute for auth.** While the app is unlocked and running, it
+  can read its own secrets — as it must. This guards data at rest, not a
+  compromised or rooted/jailbroken runtime.
+- ⚠️ **No biometric gate by default.** Access is not tied to a fresh Face ID /
+  fingerprint check. If you need per-read user presence, gate the call in your
+  app.
+
+---
+
+## ⚡ Benchmarks
+
+Both stores go through a typed Pigeon channel to native code. The regular store
+is a thin call over DataStore / UserDefaults; the secure store adds
+encrypt/decrypt (AndroidKeyStore AES-GCM) or a Keychain round-trip. The numbers
+below show that shape — reads are cheap, and secure writes cost the most.
+
+> **These are illustrative, not a spec.** Measured on an **iOS simulator**
+> (iPhone 17 Pro, debug build) over 300 iterations per op after warm-up. Real
+> devices, release builds, and Android hardware will differ — often
+> substantially. Treat them as *relative* (secure vs regular, read vs write),
+> and re-run on your own targets before quoting.
+
+| Operation | Mean per op (µs) | Ops/sec |
+| --- | ---: | ---: |
+| regular setString | 171.6 | 5,828 |
+| regular getString | 39.9 | 25,044 |
+| regular setInt | 189.7 | 5,272 |
+| regular getInt | 40.6 | 24,616 |
+| secure setString | 636.9 | 1,570 |
+| secure getString | 210.5 | 4,750 |
+| secure setBytes | 545.6 | 1,833 |
+| secure getBytes | 201.1 | 4,972 |
+
+**Takeaways:** reads are the cheapest calls (~40 µs regular / ~200 µs secure);
+writes cost more than reads on both stores. Encryption is not free — a secure
+write runs ~3–4× a regular write (AES-GCM + AndroidKeyStore / Keychain), and a
+secure read ~5× a regular read. All eight cases clear thousands of ops/sec, so
+for typical secret access (a handful of tokens) the overhead is negligible;
+reserve the secure store for actual secrets and keep hot, high-frequency
+key-value traffic on the regular store.
+
+Run it yourself on any connected device or simulator:
+
+```bash
+cd example
+flutter run -t lib/benchmark_main.dart -d <device-id>
+# read the BENCHMARK_TABLE_START / _END block from the console
+```
 
 ---
 
@@ -682,6 +763,30 @@ await NativeDatastore().configure(
   extension or other process in the same App Group sees the same data. You must
   enable the App Group capability in Xcode.
 
+#### SecureDatastore
+
+`SecureDatastore` exposes the same `configure` method for cross-process access
+to encrypted secrets:
+
+```dart
+await SecureDatastore().configure(
+  multiProcess: true,              // Android: multi-process encrypted DataStore
+  appGroupId: 'TEAMID.com.you.shared', // iOS: Keychain access group
+);
+```
+
+- **Android** (`multiProcess: true`) opens the encrypted store with
+  `MultiProcessDataStore` in its own file (`native_datastore_secure_mp.json`).
+  The AndroidKeyStore key is already process-agnostic, so only the file backing
+  changes. As with the regular store, secrets in the default file are **not**
+  migrated into the multi-process file.
+- **iOS** (`appGroupId`) is used as the **Keychain access group**
+  (`kSecAttrAccessGroup`), letting an app and its extensions share secrets. This
+  requires enabling the **Keychain Sharing** capability in Xcode. Note this is a
+  Keychain access group string (typically team-prefixed, e.g.
+  `$(AppIdentifierPrefix)com.you.shared`) — **not** the same as the App Group
+  suite name used by the regular `NativeDatastore`.
+
 ### ⚠️ The default (single-process) store
 
 Without `configure`, the Android backend uses single-process Preferences
@@ -756,6 +861,9 @@ AndroidKeyStore-backed AES-256-GCM on Android.
 Use it from the main isolate/process by default. For a separate process (a
 background service, or an iOS app extension), opt in with
 `configure(multiProcess: true)` (Android) or `configure(appGroupId: …)` (iOS).
+`SecureDatastore` supports the same `configure` for cross-process secrets — on
+iOS `appGroupId` is used as the Keychain access group (Keychain Sharing
+capability required).
 
 **Which platforms are supported?**
 Android and iOS. (Not web or desktop.)

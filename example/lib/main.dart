@@ -359,8 +359,26 @@ class _SecureTabState extends State<SecureTab> {
   final _valueController = TextEditingController();
   String _output = 'No secure data yet';
   String _selectedType = 'String';
+  bool _multiProcess = false;
 
   final _types = ['String', 'Bytes'];
+
+  Future<void> _onMultiProcessChanged(bool enabled) async {
+    // configure() is opt-in and non-destructive. On Android it switches the
+    // encrypted store to a MultiProcessDataStore (safe for a background service
+    // or push SDK in a separate process); on iOS multiProcess is a no-op —
+    // cross-process sharing there uses a Keychain access group (appGroupId).
+    try {
+      await _secure.configure(multiProcess: enabled);
+      setState(() => _multiProcess = enabled);
+      _showMessage(enabled
+          ? 'Multi-process ON (Android: separate MultiProcessDataStore)'
+          : 'Multi-process OFF (default single-process store)');
+      await _refreshKeys();
+    } on NativeDatastoreException catch (e) {
+      _showMessage(e.message);
+    }
+  }
 
   @override
   void dispose() {
@@ -499,7 +517,21 @@ class _SecureTabState extends State<SecureTab> {
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.dynamic_feed_outlined),
+            title: const Text('Multi-process access'),
+            subtitle: Text(
+              _multiProcess
+                  ? 'ON — Android uses a separate MultiProcessDataStore'
+                  : 'OFF — default single-process store',
+              style: const TextStyle(fontSize: 12),
+            ),
+            value: _multiProcess,
+            onChanged: _onMultiProcessChanged,
+          ),
+          const SizedBox(height: 8),
           TextField(
             controller: _keyController,
             decoration: const InputDecoration(

@@ -751,6 +751,15 @@ interface SecureDatastoreApi {
   fun clear(callback: (Result<Unit>) -> Unit)
   fun getKeys(callback: (Result<List<String>>) -> Unit)
   fun containsKey(key: String, callback: (Result<Boolean>) -> Unit)
+  /**
+   * Configures the secure storage backend. Must be called before the first
+   * read or write. When [multiProcess] is true (Android) the encrypted store
+   * is opened in multi-process mode; [appGroupId], when non-null (iOS), is
+   * used as the Keychain access group so extensions/processes sharing it see
+   * the same secrets. Both default off, leaving the single-process store
+   * untouched.
+   */
+  fun configure(multiProcess: Boolean, appGroupId: String?, callback: (Result<Unit>) -> Unit)
 
   companion object {
     /** The codec used by SecureDatastoreApi. */
@@ -909,6 +918,26 @@ interface SecureDatastoreApi {
               } else {
                 val data = result.getOrNull()
                 reply.reply(MessagesPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.SecureDatastoreApi.configure$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val multiProcessArg = args[0] as Boolean
+            val appGroupIdArg = args[1] as String?
+            api.configure(multiProcessArg, appGroupIdArg) { result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                reply.reply(MessagesPigeonUtils.wrapResult(null))
               }
             }
           }
