@@ -9,9 +9,14 @@
 [![GitHub issues](https://img.shields.io/github/issues/sudhi001/native_datastore)](https://github.com/sudhi001/native_datastore/issues)
 [![GitHub stars](https://img.shields.io/github/stars/sudhi001/native_datastore)](https://github.com/sudhi001/native_datastore/stargazers)
 [![Wiki](https://img.shields.io/badge/docs-wiki-blue)](https://github.com/sudhi001/native_datastore/wiki)
+[![Website](https://img.shields.io/badge/site-sudhi001.github.io-00919e)](https://sudhi001.github.io/native_datastore/)
 
 A modern Flutter plugin for **persistent key-value storage**, powered by platform-native APIs.
 
+> 🌐 **[sudhi001.github.io/native_datastore](https://sudhi001.github.io/native_datastore/)** — the
+> project site: a live demo of the store, the benchmarks, and the generated
+> [API reference](https://sudhi001.github.io/native_datastore/api/).
+>
 > 📖 **Task-focused guides live in the [Wiki](https://github.com/sudhi001/native_datastore/wiki)** —
 > [Getting Started](https://github.com/sudhi001/native_datastore/wiki/Getting-Started),
 > [Secure Storage](https://github.com/sudhi001/native_datastore/wiki/Secure-Storage),

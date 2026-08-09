@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>native_datastore — Flutter key-value storage for Android &amp; iOS</title>
+<meta name="description" content="Flutter plugin for persistent key-value storage: one async, type-safe Dart API over Jetpack DataStore on Android and UserDefaults on iOS.">
+<meta name="author" content="Sudhi S">
+<link rel="canonical" href="https://sudhi001.github.io/native_datastore/">
+<meta name="theme-color" content="#eef1f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c1116" media="(prefers-color-scheme: dark)">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="native_datastore">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="native_datastore — Flutter key-value storage for Android &amp; iOS">
+<meta property="og:description" content="Store a value. Close the app. It's still there. One Dart API over Jetpack DataStore and UserDefaults, with reactive streams, atomic writes and an encrypted store for secrets.">
+<meta property="og:url" content="https://sudhi001.github.io/native_datastore/">
+<meta property="og:image" content="https://sudhi001.github.io/native_datastore/social-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="native_datastore — persistent key-value storage for Flutter, on Jetpack DataStore and UserDefaults.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="native_datastore — Flutter key-value storage for Android &amp; iOS">
+<meta name="twitter:description" content="Store a value. Close the app. It's still there. One Dart API over Jetpack DataStore and UserDefaults.">
+<meta name="twitter:image" content="https://sudhi001.github.io/native_datastore/social-card.png">
+<meta name="twitter:image:alt" content="native_datastore — persistent key-value storage for Flutter.">
+
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://sudhi001.github.io/native_datastore/#website",
+      "name": "native_datastore",
+      "url": "https://sudhi001.github.io/native_datastore/",
+      "inLanguage": "en",
+      "description": "Documentation and live demo for native_datastore, a Flutter plugin for persistent key-value storage."
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "@id": "https://sudhi001.github.io/native_datastore/#package",
+      "name": "native_datastore",
+      "description": "A Flutter plugin for persistent key-value storage. One async, type-safe Dart API over Jetpack DataStore on Android and UserDefaults on iOS, with reactive streams, atomic operations and an encrypted store for secrets.",
+      "url": "https://sudhi001.github.io/native_datastore/",
+      "codeRepository": "https://github.com/sudhi001/native_datastore",
+      "programmingLanguage": ["Dart", "Kotlin", "Swift"],
+      "runtimePlatform": "Flutter",
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "isAccessibleForFree": true,
+      "keywords": "Flutter, Dart, key-value storage, shared_preferences alternative, Jetpack DataStore, UserDefaults, Android, iOS, secure storage, Keychain, cross-platform",
+      "author": { "@type": "Person", "name": "Sudhi S", "url": "https://sudhi.in" },
+      "targetProduct": {
+        "@type": "SoftwareApplication",
+        "name": "native_datastore",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Android 5.0+, iOS 13.0+",
+        "softwareVersion": "__VERSION__",
+        "downloadUrl": "https://pub.dev/packages/native_datastore",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    }
+  ]
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,500..800&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<!-- Platform marks, inlined once and referenced with <use>. Flutter and the
+     Android robot keep their brand colours; the Apple mark takes currentColor
+     so it stays solid black or solid white per Apple's guidance. -->
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="logo-flutter" viewBox="0 0 256 317">
+    <path fill="#47c5fb" d="M157.666 0 0 157.667l48.8 48.8L255.267 0z"/>
+    <path fill="#47c5fb" d="M156.567 145.397 72.15 229.816l48.985 49.716 48.71-48.71 85.423-85.425z"/>
+    <path fill="#00569e" d="m121.134 279.532 37.082 37.081h97.052l-85.424-85.792z"/>
+    <path fill="#00b5f8" d="m71.599 230.364 48.71-48.71 49.534 48.892-48.71 48.71z"/>
+    <path fill="#00569e" opacity=".45" d="m121.134 279.257 40.559-13.49 4.028-31.129z"/>
+  </symbol>
+  <symbol id="logo-android" viewBox="0 0 24 24">
+    <path fill="#3ddc84" d="M6 18c0 .55.45 1 1 1h1v3.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5V19h2v3.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5V19h1c.55 0 1-.45 1-1V8H6v10ZM3.5 8C2.67 8 2 8.67 2 9.5v7c0 .83.67 1.5 1.5 1.5S5 17.33 5 16.5v-7C5 8.67 4.33 8 3.5 8Zm17 0c-.83 0-1.5.67-1.5 1.5v7c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5v-7c0-.83-.67-1.5-1.5-1.5Zm-4.97-5.84 1.3-1.3c.2-.2.2-.51 0-.71a.5.5 0 0 0-.71 0l-1.48 1.48A6.02 6.02 0 0 0 12 1c-.96 0-1.86.23-2.66.63L7.85.15a.5.5 0 0 0-.71 0c-.2.2-.2.51 0 .71l1.31 1.31A5.98 5.98 0 0 0 6 7h12c0-1.99-.97-3.75-2.47-4.84ZM10 5H9V4h1v1Zm5 0h-1V4h1v1Z"/>
+  </symbol>
+  <symbol id="logo-apple" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.53 4.08ZM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25Z"/>
+  </symbol>
+</svg>
+
+<header class="topbar">
+  <div class="shell topbar-in">
+    <a class="wordmark" href="./">
+      <span class="wordmark-glyph" aria-hidden="true"></span>
+      native_datastore
+    </a>
+    <span class="chip" id="version-chip" hidden>v__VERSION__</span>
+    <nav class="topnav" aria-label="Primary">
+      <a href="api/">API reference</a>
+      <a href="https://github.com/sudhi001/native_datastore/wiki">Guides</a>
+      <a href="https://pub.dev/packages/native_datastore">pub.dev</a>
+      <a href="https://github.com/sudhi001/native_datastore">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ── Hero ─────────────────────────────────────────────────────────── -->
+  <section class="hero shell">
+    <div class="hero-copy">
+      <p class="eyebrow">Flutter plugin · Android &amp; iOS</p>
+      <h1>Store a value.<br>Close the app.<br><span class="hl">It's still there.</span></h1>
+      <p class="lede">
+        <b>native_datastore</b> is persistent key-value storage for Flutter — one async,
+        type-safe Dart API over <b>Jetpack DataStore</b> on Android and
+        <b>UserDefaults</b> on iOS. No method channels to hand-write, no setup files to edit.
+      </p>
+
+      <ul class="platforms">
+        <li>
+          <svg class="mark" width="18" height="22" aria-hidden="true"><use href="#logo-flutter"/></svg>
+          <span><b>Flutter</b> 3.3 and up</span>
+        </li>
+        <li>
+          <svg class="mark" width="20" height="20" aria-hidden="true"><use href="#logo-android"/></svg>
+          <span><b>Android</b> 5.0 · Jetpack DataStore</span>
+        </li>
+        <li>
+          <svg class="mark mark-apple" width="18" height="20" aria-hidden="true"><use href="#logo-apple"/></svg>
+          <span><b>iOS</b> 13.0 · UserDefaults</span>
+        </li>
+      </ul>
+
+      <div class="install">
+        <code id="install-cmd">flutter pub add native_datastore</code>
+        <button type="button" class="copy" data-copy="#install-cmd">Copy</button>
+      </div>
+
+      <p class="hero-links">
+        <a class="btn btn-primary" href="https://github.com/sudhi001/native_datastore/wiki/Getting-Started">Get started</a>
+        <a class="btn" href="api/">Browse the API</a>
+      </p>
+    </div>
+
+    <!-- Signature: a key-value store you can actually write to, that survives a reload -->
+    <div class="store" id="store">
+      <div class="store-head">
+        <span class="store-name">NativeDatastore()</span>
+        <span class="store-count"><b id="key-count">0</b> keys</span>
+      </div>
+
+      <table class="store-table">
+        <caption class="sr-only">Demo key-value store contents</caption>
+        <thead>
+          <tr><th scope="col">Key</th><th scope="col">Type</th><th scope="col">Value</th><th scope="col"><span class="sr-only">Remove</span></th></tr>
+        </thead>
+        <tbody id="store-rows"></tbody>
+      </table>
+
+      <p class="store-empty" id="store-empty" hidden>
+        The store is empty — every getter returns <code>null</code>. Run a write below.
+      </p>
+
+      <output class="store-log" id="store-log" aria-live="polite"></output>
+
+      <div class="store-ops">
+        <button type="button" data-op="setString">setString</button>
+        <button type="button" data-op="incrementInt">incrementInt</button>
+        <button type="button" data-op="toggleBool">toggleBool</button>
+        <button type="button" data-op="setDateTime">setDateTime</button>
+        <button type="button" data-op="clear" class="op-danger">clear</button>
+      </div>
+
+      <p class="store-foot">
+        This panel is backed by your browser's own storage, so
+        <button type="button" class="linkish" id="reload-btn">reload the page</button>
+        — the values are read back. On a device, DataStore and UserDefaults do exactly this job.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Why ──────────────────────────────────────────────────────────── -->
+  <section class="shell band" id="why">
+    <header class="band-head">
+      <p class="eyebrow">Why switch</p>
+      <h2>SharedPreferences is the legacy path</h2>
+      <p class="band-lede">
+        Google's own guidance is to prefer DataStore. Here is what changes when you do.
+      </p>
+    </header>
+
+    <table class="compare">
+      <thead>
+        <tr>
+          <th scope="col">Concern</th>
+          <th scope="col" class="col-old">SharedPreferences</th>
+          <th scope="col" class="col-new">native_datastore</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Thread safety</th><td>Unsafe on the UI thread; can trigger ANRs</td><td>Fully async, coroutine-backed</td></tr>
+        <tr><th scope="row">Error handling</th><td>Fails silently</td><td>Typed <code>NativeDatastoreException</code></td></tr>
+        <tr><th scope="row">Parsing errors</th><td>Throw at runtime</td><td>No runtime parse exceptions</td></tr>
+        <tr><th scope="row">Disk I/O</th><td>Blocking <code>commit()</code> or fire-and-forget <code>apply()</code></td><td>One consistent async API</td></tr>
+        <tr><th scope="row">Type safety</th><td>Returns a default on type mismatch</td><td>Typed keys, checked at compile time</td></tr>
+        <tr><th scope="row">Concurrent writes</th><td>No transactional guarantee</td><td>Atomic read-modify-write</td></tr>
+      </tbody>
+    </table>
+    <p class="note">
+      Already shipping <code>shared_preferences</code>? One call imports everything:
+      <code>await ds.migrateFromSharedPreferences()</code>.
+    </p>
+  </section>
+
+  <!-- ── Features ─────────────────────────────────────────────────────── -->
+  <section class="shell band" id="features">
+    <header class="band-head">
+      <p class="eyebrow">What you get</p>
+      <h2>Eight types, two platforms, one API</h2>
+    </header>
+
+    <figure class="arch">
+      <img src="assets/architecture.gif" width="1040" height="240" loading="lazy" decoding="async"
+           alt="One Dart API bridged by Pigeon to Jetpack DataStore on Android and UserDefaults on iOS.">
+      <figcaption>Your Dart calls cross a generated Pigeon channel and land on whichever store the platform already recommends.</figcaption>
+    </figure>
+
+    <ul class="cards">
+      <li class="card">
+        <h3>Native backends</h3>
+        <p>Jetpack DataStore on Android, UserDefaults on iOS. No shim database, no reinvented storage format.</p>
+      </li>
+      <li class="card">
+        <h3>Eight supported types</h3>
+        <p><code>String</code>, <code>bool</code>, <code>int</code>, <code>double</code>, <code>List&lt;String&gt;</code>, <code>Uint8List</code>, <code>DateTime</code>, <code>Map&lt;String, dynamic&gt;</code> — each getter returns <code>null</code> when the key is absent.</p>
+      </li>
+      <li class="card">
+        <h3>Reactive by default</h3>
+        <p><code>watchBool('darkMode')</code> hands you a <code>Stream</code> that emits now and on every change. Drop it into a <code>StreamBuilder</code> and the UI keeps itself current.</p>
+      </li>
+      <li class="card">
+        <h3>Atomic operations</h3>
+        <p><code>incrementInt</code>, <code>toggleBool</code> and <code>compareAndSet</code> run as a single native transaction, so two writers never lose an update.</p>
+      </li>
+      <li class="card">
+        <h3>Encrypted store for secrets</h3>
+        <p><code>SecureDatastore</code> keeps tokens and keys under AES-256-GCM with an AndroidKeyStore key, or in the iOS Keychain.</p>
+      </li>
+      <li class="card">
+        <h3>Generated bridge</h3>
+        <p>The platform channel is generated by <a href="https://pub.dev/packages/pigeon">Pigeon</a> — no string-keyed method lookups, no hand-written codecs. About 2,400 lines total, zero dependencies beyond Flutter.</p>
+      </li>
+    </ul>
+  </section>
+
+  <!-- ── Platforms ────────────────────────────────────────────────────── -->
+  <section class="shell band" id="platforms">
+    <header class="band-head">
+      <p class="eyebrow">Both sides of the bridge</p>
+      <h2>What your call becomes natively</h2>
+      <p class="band-lede">
+        You write one Dart line. Here is the API it lands on, per type, per platform —
+        so you always know what is actually on disk.
+      </p>
+    </header>
+
+    <table class="mapping">
+      <caption class="sr-only">How each Dart type is stored on Android and iOS</caption>
+      <thead>
+        <tr>
+          <th scope="col">Dart type</th>
+          <th scope="col">Read / write</th>
+          <th scope="col">
+            <svg class="mark" width="16" height="16" aria-hidden="true"><use href="#logo-android"/></svg>
+            Android · DataStore
+          </th>
+          <th scope="col">
+            <svg class="mark mark-apple" width="14" height="16" aria-hidden="true"><use href="#logo-apple"/></svg>
+            iOS · UserDefaults
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>String</code></th><td><code>getString</code> / <code>setString</code></td><td><code>stringPreferencesKey</code></td><td><code>string(forKey:)</code></td></tr>
+        <tr><th scope="row"><code>bool</code></th><td><code>getBool</code> / <code>setBool</code></td><td><code>booleanPreferencesKey</code></td><td><code>bool(forKey:)</code></td></tr>
+        <tr><th scope="row"><code>int</code></th><td><code>getInt</code> / <code>setInt</code></td><td><code>longPreferencesKey</code></td><td><code>integer(forKey:)</code></td></tr>
+        <tr><th scope="row"><code>double</code></th><td><code>getDouble</code> / <code>setDouble</code></td><td><code>doublePreferencesKey</code></td><td><code>double(forKey:)</code></td></tr>
+        <tr><th scope="row"><code>List&lt;String&gt;</code></th><td><code>getStringList</code> / <code>setStringList</code></td><td>JSON-encoded string</td><td>Native string array</td></tr>
+        <tr><th scope="row"><code>Uint8List</code></th><td><code>getBytes</code> / <code>setBytes</code></td><td>Base64-encoded string</td><td>Native <code>Data</code></td></tr>
+        <tr><th scope="row"><code>DateTime</code></th><td><code>getDateTime</code> / <code>setDateTime</code></td><td><code>Long</code> — millis, UTC</td><td><code>Int64</code> — millis, UTC</td></tr>
+        <tr><th scope="row"><code>Map&lt;String, dynamic&gt;</code></th><td><code>getMap</code> / <code>setMap</code></td><td>JSON-encoded string</td><td>JSON-encoded string</td></tr>
+      </tbody>
+    </table>
+    <p class="note">
+      Every getter returns <code>null</code> when the key is absent. <code>DateTime</code>
+      is always stored and returned in UTC — call <code>.toLocal()</code> if you need
+      wall-clock time.
+    </p>
+
+    <div class="natives">
+      <article class="native">
+        <h3>
+          <svg class="mark" width="24" height="24" aria-hidden="true"><use href="#logo-android"/></svg>
+          Android
+        </h3>
+        <p class="native-min">Minimum API 21 (Android 5.0) · API 23 for the secure store</p>
+        <ul>
+          <li>Backed by <code>androidx.datastore:datastore-preferences</code> with Kotlin coroutines.</li>
+          <li>Every operation runs on <code>Dispatchers.IO</code>, so nothing touches the UI thread and nothing can ANR.</li>
+          <li>Stored at <code>files/datastore/native_datastore_prefs.preferences_pb</code>.</li>
+          <li>A <code>ReplaceFileCorruptionHandler</code> is installed: if the OS kills your process mid-write, the store recovers as empty instead of throwing on every call forever after.</li>
+          <li>Secrets use AES-256-GCM with an AndroidKeyStore key, hardware-backed where the device supports it.</li>
+          <li>Multi-process access is opt-in for background services.</li>
+        </ul>
+      </article>
+
+      <article class="native">
+        <h3>
+          <svg class="mark mark-apple" width="21" height="24" aria-hidden="true"><use href="#logo-apple"/></svg>
+          iOS
+        </h3>
+        <p class="native-min">Minimum iOS 13.0</p>
+        <ul>
+          <li>Backed by <code>UserDefaults.standard</code>, with every key namespaced <code>native_datastore.</code> so it cannot collide with yours.</li>
+          <li>String lists and <code>Uint8List</code> are stored natively as arrays and <code>Data</code> — no JSON encoding tax.</li>
+          <li>Getters are strict: a stored value of the wrong underlying type returns <code>null</code> rather than silently coercing.</li>
+          <li>Ships both a Swift Package Manager <code>Package.swift</code> and a CocoaPods podspec, so it builds either way with no configuration.</li>
+          <li>Includes a <code>PrivacyInfo.xcprivacy</code> manifest declaring the <code>UserDefaults</code> required-reason API for App Store review.</li>
+          <li>Secrets go to the Keychain, shareable with app extensions via an App Group.</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <!-- ── Cheat sheet ──────────────────────────────────────────────────── -->
+  <section class="shell band" id="cheatsheet">
+    <header class="band-head">
+      <p class="eyebrow">The whole surface</p>
+      <h2>Cheat sheet</h2>
+      <p class="band-lede">Copy, paste, adapt. Every call below is the real signature.</p>
+    </header>
+
+    <div class="codewrap">
+      <button type="button" class="copy copy-float" data-copy="#cheat">Copy</button>
+<pre class="code"><code id="cheat">final ds = NativeDatastore();
+
+// Write and read — getters return null when the key is absent
+await ds.setString('username', 'sudhi');
+final name = await ds.getString('username');      // 'sudhi'
+await ds.setBool('darkMode', true);
+await ds.setInt('loginCount', 42);
+await ds.setDouble('rating', 4.8);
+await ds.setStringList('tags', ['flutter', 'dart']);
+await ds.setBytes('avatar', bytes);               // Uint8List, up to 1 MiB
+await ds.setDateTime('lastSeen', DateTime.now()); // stored as UTC
+await ds.setMap('profile', {'level': 5});         // any JSON-able map
+
+// Observe a key as a Stream
+ds.watchInt('loginCount').listen((v) => print('count = $v'));
+
+// Atomic updates — safe when several writers race
+await ds.incrementInt('loginCount');              // returns the new value
+await ds.decrementInt('lives');
+await ds.toggleBool('darkMode');
+await ds.compareAndSetString('status', expected: 'pending', value: 'done');
+
+// Query and delete
+await ds.containsKey('username');                 // bool
+await ds.getKeys();                               // List&lt;String&gt;
+await ds.getAll();                                // Map&lt;String, Object&gt;
+await ds.remove('username');
+await ds.clear();
+
+// One-time import from the shared_preferences package
+await ds.migrateFromSharedPreferences();
+
+// Secrets — encrypted at rest
+final secure = SecureDatastore();
+await secure.setString('refresh_token', jwt);
+final token = await secure.getString('refresh_token');</code></pre>
+    </div>
+  </section>
+
+  <!-- ── Secure ───────────────────────────────────────────────────────── -->
+  <section class="secure-band">
+    <div class="shell secure-in">
+      <div class="secure-copy">
+        <p class="eyebrow">SecureDatastore</p>
+        <h2>Tokens don't belong in plain storage</h2>
+        <p>
+          The regular store does not encrypt. For refresh tokens, API keys and
+          anything else worth stealing, use <code>SecureDatastore</code> — same
+          call shapes, ciphertext on disk.
+        </p>
+        <dl class="secure-facts">
+          <div>
+            <dt>
+              <svg class="mark" width="16" height="16" aria-hidden="true"><use href="#logo-android"/></svg>
+              Android
+            </dt>
+            <dd>AES-256-GCM with a key minted in the AndroidKeyStore, hardware-backed where the device allows it. A fresh 96-bit IV per write. Requires API 23+.</dd>
+          </div>
+          <div>
+            <dt>
+              <svg class="mark mark-apple" width="14" height="16" aria-hidden="true"><use href="#logo-apple"/></svg>
+              iOS
+            </dt>
+            <dd>Keychain Services with <code>kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly</code> — never backed up, never migrated to a new device.</dd>
+          </div>
+        </dl>
+        <p class="secure-scope">
+          Surface is deliberately small: <code>String</code> and <code>Uint8List</code>,
+          plus <code>remove</code>, <code>clear</code>, <code>getKeys</code>,
+          <code>containsKey</code>. Values cap at 1 MiB.
+        </p>
+        <a class="btn btn-onsecure" href="https://github.com/sudhi001/native_datastore/wiki/Secure-Storage">Read the secure storage guide</a>
+      </div>
+      <figure class="secure-fig">
+        <img src="assets/secure-storage.gif" width="1000" height="500" loading="lazy" decoding="async"
+             alt="A plaintext token leaves Dart code, is encrypted with an AES-256-GCM key held in the AndroidKeyStore or iOS Keychain, and only ciphertext is written to disk.">
+        <figcaption>Plaintext in, ciphertext on disk — the key never leaves the platform keystore.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ── Benchmarks ───────────────────────────────────────────────────── -->
+  <section class="shell band" id="benchmarks">
+    <header class="band-head">
+      <p class="eyebrow">Cost of a call</p>
+      <h2>Reads are cheap. Encryption isn't free.</h2>
+      <p class="band-lede">
+        Throughput per operation, higher is better. The split is the point: every
+        regular-store call outruns every secure-store call, and all eight clear
+        thousands of operations per second.
+      </p>
+    </header>
+
+    <div class="legend" role="presentation">
+      <span class="legend-item"><span class="swatch swatch-regular"></span>Regular store</span>
+      <span class="legend-item"><span class="swatch swatch-secure"></span>Secure store</span>
+    </div>
+
+    <table class="bench">
+      <caption class="sr-only">Benchmark throughput by operation, in operations per second</caption>
+      <thead>
+        <tr>
+          <th scope="col">Operation</th>
+          <th scope="col" class="bench-plot-h">Throughput</th>
+          <th scope="col" class="num">Ops/sec</th>
+          <th scope="col" class="num">Mean <span class="unit">µs</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr data-store="regular"><th scope="row"><span class="bench-store">regular</span> getString</th><td class="bench-plot"><span class="bar" style="--w:100.0%"></span></td><td class="num">25,044</td><td class="num">39.9</td></tr>
+        <tr data-store="regular"><th scope="row"><span class="bench-store">regular</span> getInt</th><td class="bench-plot"><span class="bar" style="--w:98.3%"></span></td><td class="num">24,616</td><td class="num">40.6</td></tr>
+        <tr data-store="regular"><th scope="row"><span class="bench-store">regular</span> setString</th><td class="bench-plot"><span class="bar" style="--w:23.3%"></span></td><td class="num">5,828</td><td class="num">171.6</td></tr>
+        <tr data-store="regular"><th scope="row"><span class="bench-store">regular</span> setInt</th><td class="bench-plot"><span class="bar" style="--w:21.1%"></span></td><td class="num">5,272</td><td class="num">189.7</td></tr>
+        <tr data-store="secure"><th scope="row"><span class="bench-store">secure</span> getBytes</th><td class="bench-plot"><span class="bar" style="--w:19.9%"></span></td><td class="num">4,972</td><td class="num">201.1</td></tr>
+        <tr data-store="secure"><th scope="row"><span class="bench-store">secure</span> getString</th><td class="bench-plot"><span class="bar" style="--w:19.0%"></span></td><td class="num">4,750</td><td class="num">210.5</td></tr>
+        <tr data-store="secure"><th scope="row"><span class="bench-store">secure</span> setBytes</th><td class="bench-plot"><span class="bar" style="--w:7.3%"></span></td><td class="num">1,833</td><td class="num">545.6</td></tr>
+        <tr data-store="secure"><th scope="row"><span class="bench-store">secure</span> setString</th><td class="bench-plot"><span class="bar" style="--w:6.3%"></span></td><td class="num">1,570</td><td class="num">636.9</td></tr>
+      </tbody>
+    </table>
+
+    <p class="note">
+      <b>Illustrative, not a spec.</b> Measured on an iOS simulator (iPhone 17 Pro,
+      debug build), 300 iterations per operation after warm-up. Real devices,
+      release builds and Android hardware will differ — often substantially. Run it
+      yourself: <code>cd example &amp;&amp; flutter run -t lib/benchmark_main.dart</code>.
+    </p>
+  </section>
+
+  <!-- ── On a device ──────────────────────────────────────────────────── -->
+  <section class="shell band" id="demo">
+    <header class="band-head">
+      <p class="eyebrow">On a real device</p>
+      <h2>The example app</h2>
+      <p class="band-lede">
+        Both stores, every type, running on hardware. Clone the repo and
+        <code>flutter run</code> from <code>example/</code>.
+      </p>
+    </header>
+
+    <div class="demos">
+      <figure>
+        <img src="assets/example-demo.gif" width="300" height="652" loading="lazy" decoding="async"
+             alt="The example app writing every supported type on the Regular tab, then reading them all back.">
+        <figcaption>Regular store — writing all eight types, then reading them back.</figcaption>
+      </figure>
+      <figure>
+        <img src="assets/secure-demo.gif" width="320" height="696" loading="lazy" decoding="async"
+             alt="The example app saving encrypted secrets on the Secure tab, listing the keys, then clearing the store.">
+        <figcaption>Secure store — saving secrets, listing keys, clearing. Values stay encrypted at rest.</figcaption>
+      </figure>
+      <figure class="demo-wide">
+        <img src="assets/reactive-watch.gif" width="1040" height="352" loading="lazy" decoding="async"
+             alt="A write to a key flows through the store into a watchInt stream, which rebuilds the UI automatically.">
+        <figcaption><code>watchInt()</code> pushing a change straight into the UI — no manual refresh.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ── Start ────────────────────────────────────────────────────────── -->
+  <section class="shell band" id="start">
+    <header class="band-head">
+      <p class="eyebrow">Three steps</p>
+      <h2>Start writing keys</h2>
+    </header>
+
+    <div class="start-grid">
+      <div class="start-step">
+        <p class="step-label">Add it</p>
+        <pre class="code code-sm"><code>flutter pub add native_datastore</code></pre>
+        <p>No Gradle edits, no <code>Info.plist</code> keys, no manifest changes.</p>
+      </div>
+      <div class="start-step">
+        <p class="step-label">Import it</p>
+        <pre class="code code-sm"><code>import 'package:native_datastore/native_datastore.dart';</code></pre>
+        <p>One import covers both <code>NativeDatastore</code> and <code>SecureDatastore</code>.</p>
+      </div>
+      <div class="start-step">
+        <p class="step-label">Use it</p>
+        <pre class="code code-sm"><code>final ds = NativeDatastore();
+await ds.setString('username', 'sudhi');
+final name = await ds.getString('username');</code></pre>
+        <p>Everything is a <code>Future</code> — <code>await</code> it, and the UI thread stays free.</p>
+      </div>
+    </div>
+
+    <table class="reqs">
+      <caption>Minimum versions</caption>
+      <tbody>
+        <tr><th scope="row"><svg class="mark" width="15" height="18" aria-hidden="true"><use href="#logo-flutter"/></svg> Flutter</th><td>3.3.0</td></tr>
+        <tr><th scope="row"><span class="mark-space"></span> Dart SDK</th><td>3.11.4</td></tr>
+        <tr><th scope="row"><svg class="mark" width="17" height="17" aria-hidden="true"><use href="#logo-android"/></svg> Android</th><td>API 21 (5.0) — API 23 for <code>SecureDatastore</code></td></tr>
+        <tr><th scope="row"><svg class="mark mark-apple" width="15" height="17" aria-hidden="true"><use href="#logo-apple"/></svg> iOS</th><td>13.0</td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="shell footer-in">
+    <div class="footer-brand">
+      <span class="wordmark"><span class="wordmark-glyph" aria-hidden="true"></span>native_datastore</span>
+      <p>Persistent key-value storage for Flutter, on the APIs each platform already recommends.</p>
+      <p class="footer-legal">Apache-2.0 · built by <a href="https://sudhi.in">Sudhi S</a></p>
+      <p class="footer-legal trademarks">
+        Flutter and the Flutter logo are trademarks of Google LLC. Android, Google Play
+        and the Android robot are trademarks of Google LLC; the robot is reproduced from
+        work created and shared by Google and used under the
+        <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a> licence.
+        Apple, the Apple logo and iOS are trademarks of Apple Inc. This project is not
+        affiliated with, endorsed by, or sponsored by Google or Apple.
+      </p>
+    </div>
+    <nav class="footer-nav" aria-label="Footer">
+      <div>
+        <h2>Docs</h2>
+        <ul>
+          <li><a href="api/">API reference</a></li>
+          <li><a href="https://github.com/sudhi001/native_datastore/wiki/Getting-Started">Getting started</a></li>
+          <li><a href="https://github.com/sudhi001/native_datastore/wiki/Secure-Storage">Secure storage</a></li>
+          <li><a href="https://github.com/sudhi001/native_datastore/wiki/Multi-Process-Access">Multi-process access</a></li>
+          <li><a href="https://github.com/sudhi001/native_datastore/wiki/Troubleshooting">Troubleshooting</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Project</h2>
+        <ul>
+          <li><a href="https://pub.dev/packages/native_datastore">pub.dev package</a></li>
+          <li><a href="https://github.com/sudhi001/native_datastore">Source on GitHub</a></li>
+          <li><a href="https://github.com/sudhi001/native_datastore/blob/main/CHANGELOG.md">Changelog</a></li>
+          <li><a href="https://github.com/sudhi001/native_datastore/issues">Report an issue</a></li>
+          <li><a href="https://github.com/sudhi001/native_datastore/blob/main/SECURITY.md">Security policy</a></li>
+        </ul>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script src="app.js" defer></script>
+</body>
+</html>
