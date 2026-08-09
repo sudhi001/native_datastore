@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- __BUILDDATE__ is substituted by .github/workflows/pages.yml at deploy time. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://sudhi001.github.io/native_datastore/</loc>
+    <lastmod>__BUILDDATE__</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://sudhi001.github.io/native_datastore/api/</loc>
+    <lastmod>__BUILDDATE__</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+</urlset>

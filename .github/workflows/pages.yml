@@ -1,0 +1,93 @@
+name: Pages
+
+# Builds and deploys https://sudhi001.github.io/native_datastore/ — the static
+# landing page in `site/` plus the dartdoc API reference generated from `lib/`.
+#
+# One-time repo setup: Settings → Pages → Source = "GitHub Actions".
+#
+# The published tree is:
+#   /            site/* — page, icons, social card, robots.txt, sitemap.xml
+#   /assets/     doc/assets/* (the README demo GIFs the page embeds)
+#   /api/        dart doc output
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'lib/**'
+      - 'doc/assets/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel an in-flight deployment — a half-published site is worse than a
+# slightly stale one. Queue instead.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate API reference
+        # Output goes outside `doc/`, which holds the hand-kept README assets.
+        run: dart doc --output build/api
+
+      - name: Assemble site
+        run: |
+          set -euo pipefail
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | tr -d '[:space:]')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read version from pubspec.yaml"
+            exit 1
+          fi
+
+          mkdir -p _site/assets _site/api
+          cp -R site/. _site/
+          cp -R doc/assets/. _site/assets/
+          cp -R build/api/. _site/api/
+          rm -f _site/README.md _site/.pubignore   # authoring notes, not page content
+
+          # The page ships `v__VERSION__`; substitute the real one so the chip
+          # and the JSON-LD softwareVersion never drift from pubspec.yaml.
+          # app.js hides the chip if this step never ran (i.e. someone opened
+          # site/index.html straight off disk).
+          sed -i "s/__VERSION__/$VERSION/g" _site/index.html
+          sed -i "s/__BUILDDATE__/$(date -u +%Y-%m-%d)/g" _site/sitemap.xml
+
+          touch _site/.nojekyll
+          echo "Assembled site for v$VERSION"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
