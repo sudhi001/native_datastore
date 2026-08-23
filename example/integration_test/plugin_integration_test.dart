@@ -67,7 +67,20 @@ void main() {
 
     // Test getKeys
     final keys = await datastore.getKeys();
-    expect(keys, containsAll(['testKey', 'boolKey', 'boolKeyFalse', 'intKey', 'doubleKey', 'listKey', 'bytesKey', 'dateKey', 'mapKey']));
+    expect(
+      keys,
+      containsAll([
+        'testKey',
+        'boolKey',
+        'boolKeyFalse',
+        'intKey',
+        'doubleKey',
+        'listKey',
+        'bytesKey',
+        'dateKey',
+        'mapKey',
+      ]),
+    );
 
     // Test getAll
     final allData = await datastore.getAll();
@@ -164,14 +177,20 @@ void main() {
     await secure.setString('mixed', 'as-string');
     await secure.setBytes('mixed', Uint8List.fromList([7, 8, 9]));
     expect(await secure.getString('mixed'), 'as-string', reason: tag);
-    expect(await secure.getBytes('mixed'), Uint8List.fromList([7, 8, 9]),
-        reason: tag);
+    expect(
+      await secure.getBytes('mixed'),
+      Uint8List.fromList([7, 8, 9]),
+      reason: tag,
+    );
 
     // Introspection.
     expect(await secure.containsKey('token'), true, reason: tag);
     expect(await secure.containsKey('nope'), false, reason: tag);
-    expect(await secure.getKeys(), containsAll(['token', 'key', 'mixed']),
-        reason: tag);
+    expect(
+      await secure.getKeys(),
+      containsAll(['token', 'key', 'mixed']),
+      reason: tag,
+    );
 
     // remove clears both buckets for a user-key.
     expect(await secure.remove('mixed'), true, reason: tag);
@@ -187,15 +206,17 @@ void main() {
     expect(await secure.getKeys(), isEmpty, reason: '$tag: cleared');
   }
 
-  testWidgets('SecureDatastore single-process (default) round-trip',
-      (WidgetTester tester) async {
+  testWidgets('SecureDatastore single-process (default) round-trip', (
+    WidgetTester tester,
+  ) async {
     final secure = SecureDatastore();
     // Default: no configure() call — the standard single-process store.
     await runSecureRoundTrip(secure, 'single-process');
   });
 
-  testWidgets('SecureDatastore multi-process configure round-trip',
-      (WidgetTester tester) async {
+  testWidgets('SecureDatastore multi-process configure round-trip', (
+    WidgetTester tester,
+  ) async {
     final secure = SecureDatastore();
 
     // Opt into multi-process. Must be safe to call before any read/write. We
@@ -244,8 +265,9 @@ void main() {
     await datastore.clear();
   });
 
-  testWidgets('watch emits initial value and reacts to changes',
-      (WidgetTester tester) async {
+  testWidgets('watch emits initial value and reacts to changes', (
+    WidgetTester tester,
+  ) async {
     final datastore = NativeDatastore();
     await datastore.clear();
     await datastore.setInt('counter', 10);

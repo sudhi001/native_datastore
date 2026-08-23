@@ -74,10 +74,7 @@ class SecureDatastore {
         cause: e,
       );
     } catch (e) {
-      throw NativeDatastoreException(
-        'Failed to $operation: $e',
-        cause: e,
-      );
+      throw NativeDatastoreException('Failed to $operation: $e', cause: e);
     }
   }
 
@@ -105,10 +102,7 @@ class SecureDatastore {
         '(max $_maxSecureBlobBytes)',
       );
     }
-    return _guard(
-      'secure setString("$key")',
-      () => _api.setString(key, value),
-    );
+    return _guard('secure setString("$key")', () => _api.setString(key, value));
   }
 
   /// Reads a [Uint8List] previously written with [setBytes].
@@ -134,10 +128,7 @@ class SecureDatastore {
         '(max $_maxSecureBlobBytes)',
       );
     }
-    return _guard(
-      'secure setBytes("$key")',
-      () => _api.setBytes(key, value),
-    );
+    return _guard('secure setBytes("$key")', () => _api.setBytes(key, value));
   }
 
   /// Removes every value previously stored under [key]. Returns `true` if

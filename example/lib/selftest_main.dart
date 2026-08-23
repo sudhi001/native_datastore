@@ -22,7 +22,8 @@ Future<void> main() async {
 
   void check(String name, bool ok, [String detail = '']) {
     (ok ? () => passed++ : () => failed++)();
-    final line = 'SELFTEST ${ok ? "PASS" : "FAIL"}: $name'
+    final line =
+        'SELFTEST ${ok ? "PASS" : "FAIL"}: $name'
         '${detail.isEmpty ? "" : "  ($detail)"}';
     results.add(line);
     // ignore: avoid_print
@@ -34,25 +35,35 @@ Future<void> main() async {
     check('$tag: starts empty', (await secure.getKeys()).isEmpty);
 
     await secure.setString('token', 'secret-$tag');
-    check('$tag: string round-trip',
-        await secure.getString('token') == 'secret-$tag');
+    check(
+      '$tag: string round-trip',
+      await secure.getString('token') == 'secret-$tag',
+    );
 
-    final bytes = Uint8List.fromList(List.generate(16, (i) => (255 - i) & 0xff));
+    final bytes = Uint8List.fromList(
+      List.generate(16, (i) => (255 - i) & 0xff),
+    );
     await secure.setBytes('key', bytes);
     final got = await secure.getBytes('key');
-    check('$tag: bytes round-trip',
-        got != null && got.length == 16 && got[0] == 255 && got[15] == 240);
+    check(
+      '$tag: bytes round-trip',
+      got != null && got.length == 16 && got[0] == 255 && got[15] == 240,
+    );
 
     await secure.setString('mixed', 'as-string');
     await secure.setBytes('mixed', Uint8List.fromList([7, 8, 9]));
-    check('$tag: independent string/bytes buckets',
-        await secure.getString('mixed') == 'as-string' &&
-            (await secure.getBytes('mixed'))?.first == 7);
+    check(
+      '$tag: independent string/bytes buckets',
+      await secure.getString('mixed') == 'as-string' &&
+          (await secure.getBytes('mixed'))?.first == 7,
+    );
 
     check('$tag: containsKey true', await secure.containsKey('token'));
     check('$tag: containsKey false', !await secure.containsKey('nope'));
-    check('$tag: getKeys', (await secure.getKeys()).toSet()
-        .containsAll({'token', 'key', 'mixed'}));
+    check(
+      '$tag: getKeys',
+      (await secure.getKeys()).toSet().containsAll({'token', 'key', 'mixed'}),
+    );
 
     check('$tag: remove clears both buckets', await secure.remove('mixed'));
     check('$tag: removed is gone', await secure.getString('mixed') == null);
@@ -84,8 +95,10 @@ Future<void> main() async {
   }
 
   // ignore: avoid_print
-  print('SELFTEST SUMMARY: $passed passed, $failed failed '
-      '=> ${failed == 0 ? "ALL PASS" : "FAILURES"}');
+  print(
+    'SELFTEST SUMMARY: $passed passed, $failed failed '
+    '=> ${failed == 0 ? "ALL PASS" : "FAILURES"}',
+  );
 
   runApp(_ResultApp(results: results, allPass: failed == 0));
 }
@@ -104,20 +117,24 @@ class _ResultApp extends StatelessWidget {
         appBar: AppBar(
           backgroundColor: allPass ? Colors.green : Colors.red,
           foregroundColor: Colors.white,
-          title: Text(allPass
-              ? 'SecureDatastore self-test: ALL PASS'
-              : 'SecureDatastore self-test: FAILURES'),
+          title: Text(
+            allPass
+                ? 'SecureDatastore self-test: ALL PASS'
+                : 'SecureDatastore self-test: FAILURES',
+          ),
         ),
         body: ListView(
           padding: const EdgeInsets.all(12),
           children: [
             for (final r in results)
-              Text(r,
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                    color: r.contains('FAIL') ? Colors.red : Colors.black87,
-                  )),
+              Text(
+                r,
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: r.contains('FAIL') ? Colors.red : Colors.black87,
+                ),
+              ),
           ],
         ),
       ),

@@ -64,8 +64,10 @@ Future<void> main() async {
     await _time('regular getInt', (i) => regular.getInt('n')),
     await _time('secure setString', (i) => secure.setString('k', '$value$i')),
     await _time('secure getString', (i) => secure.getString('k')),
-    await _time('secure setBytes',
-        (i) => secure.setBytes('b', Uint8List.fromList([i & 0xff, ...bytes]))),
+    await _time(
+      'secure setBytes',
+      (i) => secure.setBytes('b', Uint8List.fromList([i & 0xff, ...bytes])),
+    ),
     await _time('secure getBytes', (i) => secure.getBytes('b')),
   ];
 
@@ -74,8 +76,10 @@ Future<void> main() async {
     ..writeln('| Operation | Mean per op (µs) | Ops/sec |')
     ..writeln('| --- | ---: | ---: |');
   for (final r in results) {
-    buffer.writeln('| ${r.label} | ${r.micros.toStringAsFixed(1)} '
-        '| ${(1000000 / r.micros).round()} |');
+    buffer.writeln(
+      '| ${r.label} | ${r.micros.toStringAsFixed(1)} '
+      '| ${(1000000 / r.micros).round()} |',
+    );
   }
   buffer.writeln('BENCHMARK_TABLE_END');
   // ignore: avoid_print
@@ -103,8 +107,10 @@ class _BenchApp extends StatelessWidget {
             for (final r in results)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text('${r.label}: ${r.micros.toStringAsFixed(1)} µs/op',
-                    style: const TextStyle(fontFamily: 'monospace')),
+                child: Text(
+                  '${r.label}: ${r.micros.toStringAsFixed(1)} µs/op',
+                  style: const TextStyle(fontFamily: 'monospace'),
+                ),
               ),
           ],
         ),

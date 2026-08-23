@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -94,9 +95,7 @@ class NativeDatastore {
   /// {@endtemplate}
   static void _validateKey(String key) {
     if (key.isEmpty) {
-      throw const NativeDatastoreException(
-        'Key must not be empty',
-      );
+      throw const NativeDatastoreException('Key must not be empty');
     }
     for (final prefix in _BucketPrefix.all) {
       if (key.startsWith(prefix)) {
@@ -118,10 +117,7 @@ class NativeDatastore {
         cause: e,
       );
     } catch (e) {
-      throw NativeDatastoreException(
-        'Failed to $operation: $e',
-        cause: e,
-      );
+      throw NativeDatastoreException('Failed to $operation: $e', cause: e);
     }
   }
 
@@ -329,9 +325,7 @@ class NativeDatastore {
     _validateKey(key);
     return _guard('getMap("$key")', () async {
       final json = await _api.getMap(key);
-      return json != null
-          ? (jsonDecode(json) as Map<String, dynamic>)
-          : null;
+      return json != null ? (jsonDecode(json) as Map<String, dynamic>) : null;
     });
   }
 
@@ -453,13 +447,14 @@ class NativeDatastore {
   /// the list of user-facing keys whose value changed (or was removed) since
   /// the previous notification. Shared across every `watch*` subscriber so the
   /// native side only maintains a single observer.
-  static const EventChannel _changesChannel =
-      EventChannel('in.sudhi.native_datastore/changes');
+  static const EventChannel _changesChannel = EventChannel(
+    'in.sudhi.native_datastore/changes',
+  );
   static Stream<List<String>>? _changesBroadcast;
-  static Stream<List<String>> get _changes => _changesBroadcast ??=
-      _changesChannel.receiveBroadcastStream().map(
-            (Object? event) => (event as List<Object?>).cast<String>(),
-          );
+  static Stream<List<String>> get _changes =>
+      _changesBroadcast ??= _changesChannel.receiveBroadcastStream().map(
+        (Object? event) => (event as List<Object?>).cast<String>(),
+      );
 
   /// Drops the cached change-notification stream so the next `watch*` call
   /// re-subscribes to the platform channel. Only needed in tests that swap the
@@ -470,14 +465,60 @@ class NativeDatastore {
   /// Emits the current value of [key] immediately, then a fresh value every
   /// time the platform reports that [key] changed. [read] re-fetches the typed
   /// value on each change.
-  Stream<T?> _watch<T>(String key, Future<T?> Function() read) async* {
+  ///
+  /// Built on an explicit [StreamController] rather than an `async*` body: a
+  /// generator parked in `await for` cannot be resumed by a cancellation, so
+  /// `subscription.cancel()` would not complete — and the underlying platform
+  /// observer would stay registered — until the next change event arrived.
+  Stream<T?> _watch<T>(String key, Future<T?> Function() read) {
     _validateKey(key);
-    yield await read();
-    await for (final List<String> changedKeys in _changes) {
-      if (changedKeys.contains(key)) {
-        yield await read();
-      }
+    late final StreamController<T?> controller;
+    // ignore: cancel_subscriptions — cancelled from the controller's onCancel.
+    StreamSubscription<List<String>>? changes;
+    // Reads are chained so overlapping notifications cannot deliver a stale
+    // value after a fresher one.
+    var reads = Future<void>.value();
+
+    void scheduleRead() {
+      reads = reads.then((_) async {
+        if (controller.isClosed) {
+          return;
+        }
+        try {
+          final value = await read();
+          if (!controller.isClosed) {
+            controller.add(value);
+          }
+        } catch (error, stackTrace) {
+          if (!controller.isClosed) {
+            controller.addError(error, stackTrace);
+          }
+        }
+      });
     }
+
+    controller = StreamController<T?>(
+      onListen: () {
+        // Subscribe before the first read so a change racing that read is not
+        // dropped.
+        changes = _changes.listen(
+          (List<String> changedKeys) {
+            if (changedKeys.contains(key)) {
+              scheduleRead();
+            }
+          },
+          onError: controller.addError,
+          onDone: controller.close,
+        );
+        scheduleRead();
+      },
+      onCancel: () {
+        final subscription = changes;
+        changes = null;
+        return subscription?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   /// Watches the [String] at [key]. Emits the current value on subscription,
@@ -485,8 +526,7 @@ class NativeDatastore {
   /// or removed.
   ///
   /// {@macro native_datastore.getter}
-  Stream<String?> watchString(String key) =>
-      _watch(key, () => getString(key));
+  Stream<String?> watchString(String key) => _watch(key, () => getString(key));
 
   /// Watches the [bool] at [key]. See [watchString].
   Stream<bool?> watchBool(String key) => _watch(key, () => getBool(key));
@@ -502,8 +542,7 @@ class NativeDatastore {
       _watch(key, () => getStringList(key));
 
   /// Watches the [Uint8List] at [key]. See [watchString].
-  Stream<Uint8List?> watchBytes(String key) =>
-      _watch(key, () => getBytes(key));
+  Stream<Uint8List?> watchBytes(String key) => _watch(key, () => getBytes(key));
 
   /// Watches the [DateTime] at [key]. See [watchString].
   Stream<DateTime?> watchDateTime(String key) =>
@@ -550,9 +589,6 @@ class NativeDatastore {
   ///
   /// Throws [NativeDatastoreException] if the platform call fails.
   Future<void> configure({bool multiProcess = false, String? appGroupId}) {
-    return _guard(
-      'configure',
-      () => _api.configure(multiProcess, appGroupId),
-    );
+    return _guard('configure', () => _api.configure(multiProcess, appGroupId));
   }
 }

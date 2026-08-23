@@ -28,8 +28,14 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Formatting
+        run: dart format --output=none --set-exit-if-changed .
+
       - name: Static analysis
         run: flutter analyze
 
       - name: Unit tests
-        run: flutter test
+        run: flutter test --coverage
+
+      - name: Coverage gate
+        run: ./tool/check_coverage.sh

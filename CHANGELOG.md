@@ -1,3 +1,54 @@
+## 1.6.2
+
+* **Fix: `cancel()` on a `watch*` subscription now completes immediately.**
+  `NativeDatastore._watch` was an `async*` generator parked in
+  `await for (… in _changes)`. A generator suspended at an `await` cannot be
+  resumed by a cancellation, so `await subscription.cancel()` hung — and the
+  underlying platform change observer stayed registered — until the next change
+  event happened to arrive. The watcher is now built on an explicit
+  `StreamController`, so cancelling tears the observer down at once.
+  * A change arriving while the initial read is in flight is no longer dropped:
+    the change subscription is opened before the first read.
+  * Overlapping notifications can no longer deliver a stale value after a
+    fresher one — reads are chained.
+  * Errors from the change channel and from a failed re-read now surface as
+    stream errors instead of being swallowed, and the watcher closes when the
+    change stream closes.
+* **pub.dev score: 160/160.** Shortened the `pubspec.yaml` description to the
+  60–180 character range pana expects, and formatted every Dart file with the
+  Dart 3.7+ formatter.
+  * `tool/generate_pigeon.sh` now runs `dart format` on the generated bindings —
+    Pigeon still emits the pre-3.7 short style, which would otherwise reintroduce
+    the formatting failure on every regeneration.
+  * CI (`pr.yml`, `release.yml`) gained a `dart format --set-exit-if-changed`
+    step so formatting drift fails the build instead of the pub.dev report, plus
+    a `tool/check_coverage.sh` gate that fails the build if line coverage drops
+    below 100% and names the offending lines.
+* **Android: migrated to built-in Kotlin, without raising the Flutter floor.**
+  From AGP 9 the Flutter Gradle Plugin supplies Kotlin itself and a plugin that
+  applies the Kotlin Gradle Plugin again fails the build. `android/build.gradle.kts`
+  now applies KGP only when the consuming app's AGP major version is below 9, and
+  configures `jvmTarget` through the KGP project extension instead of the removed
+  `android.kotlinOptions{}` block. pana reports **Built-in Kotlin-ready**.
+  * The `flutter` constraint stays at `>=3.3.0` — the conditional form documented
+    for plugins that cannot require Flutter 3.44 is used deliberately, so no
+    existing consumer is broken.
+  * Verified by building the example app on both paths: AGP 8.11.1 (KGP applied)
+    and AGP 9.0.1 with `android.builtInKotlin=true` (KGP skipped).
+* **Example toolchain:** upgraded to Gradle 9.1.0, AGP 9.0.1 and Kotlin 2.3.20,
+  and migrated the example app itself to built-in Kotlin. Flutter 3.47 warns that
+  support for the previous versions will be dropped soon. This affects the demo
+  app only — it does not change what the published plugin requires, though the
+  example now needs a Flutter 3.44+ toolchain to build.
+* **Android housekeeping:** the plugin's Gradle module `version` was stale at
+  `1.5.3`; it now tracks the package version. Removed the leftover
+  `android/settings.gradle`, which declared `rootProject.name = 'android_datastore'`
+  and took precedence over the correctly named `android/settings.gradle.kts`.
+* **Tests:** unit-test line coverage is now 100% (516/516). Added coverage for
+  every typed `watch*` getter, the change-driven re-read and its key filter,
+  subscription cancellation, change-stream and read errors, and the
+  non-`PlatformException` arm of `SecureDatastore`'s error guard.
+
 ## 1.6.1
 
 * Documentation only — no code or API changes.

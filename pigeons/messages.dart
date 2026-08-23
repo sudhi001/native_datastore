@@ -12,9 +12,7 @@ import 'package:pigeon/pigeon.dart';
       errorClassName: 'NativeDatastoreError',
     ),
     swiftOut: 'ios/native_datastore/Sources/native_datastore/Messages.g.swift',
-    swiftOptions: SwiftOptions(
-      errorClassName: 'NativeDatastoreError',
-    ),
+    swiftOptions: SwiftOptions(errorClassName: 'NativeDatastoreError'),
   ),
 )
 @HostApi()
