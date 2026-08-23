@@ -1,15 +1,22 @@
 ## 1.7.0
 
 Performance release, driven by profiling on an Android emulator (API 35, arm64,
-profile mode). Ratios below are same-run comparisons; absolute microseconds are
-emulator numbers and will differ on real hardware.
+profile mode) and an iOS simulator (debug mode — simulators reject `--profile`).
+Ratios below are same-run comparisons; absolute microseconds are emulator and
+simulator numbers and will differ on real hardware. Gains differ sharply by
+platform, so each figure names the platform it was measured on.
 
 * **New: batch API — `getMany`, `setMany`, `removeMany`.** Reading keys one at a
   time costs one channel hop each, and on Android each hop materialises the whole
   store snapshot; writing one at a time rewrites the whole preferences file per
   key. Batching collapses both into a single native transaction.
-  * 200 keys, same run: reads **47.0 ms → 1.04 ms (45x)**, writes
-    **374.3 ms → 2.31 ms (162x)**.
+  * 200 keys, same run, **Android** (emulator, profile mode): reads
+    **47.0 ms → 1.04 ms (45x)**, writes **374.3 ms → 2.31 ms (162x)**.
+  * **iOS** (simulator, debug mode): reads **8.29 ms → 0.93 ms (8.9x)**, writes
+    **35.60 ms → 34.00 ms (1.05x)**. The write win is Android-specific — it comes
+    from collapsing N whole-file rewrites into one, and `UserDefaults` has no
+    such rewrite to amortise. iOS still gets the read win, from spending one
+    channel hop instead of N.
   * `setMany` is all-or-nothing: values are converted before the transaction
     opens, so an unsupported type fails before anything is written.
   * `getMany` omits absent keys rather than mapping them to `null`, so a missing
@@ -17,7 +24,9 @@ emulator numbers and will differ on real hardware.
   * Values must be `String`, `bool`, `int`, `double` or `List<String>`; use the
     typed setters for `Uint8List`, `DateTime` and `Map`, which carry type
     information the batch path does not.
-* **Byte payloads are stored natively on Android instead of Base64.** Base64
+* **Byte payloads are stored natively on Android instead of Base64.** (iOS already
+  stored `Data` natively; measurement confirms its byte cost was already flat in
+  payload size, so this finding was Android-only.) Base64
   inflated every blob ~33% on disk and, because the JVM holds strings as UTF-16,
   roughly 2.7x in memory on top of the byte array itself. `setBytes`/`getBytes`
   now use DataStore's `byteArrayPreferencesKey`.
