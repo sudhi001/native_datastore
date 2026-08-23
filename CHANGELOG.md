@@ -1,3 +1,36 @@
+## 1.7.1
+
+Documentation and tooling only — no shipped code changed, and no behaviour
+differs from 1.7.0. Released so the corrected performance figures reach pub.dev
+rather than sitting only in the repository.
+
+* **Corrected platform-specific performance claims in the 1.7.0 entry.** It
+  presented the batch-write speedup as a general result. It is Android-only.
+  * Writes on **iOS** go 35.60 ms → 34.00 ms (**1.05x**) — effectively nothing.
+    The Android gain (162x) comes from collapsing N whole-file rewrites into
+    one, and `UserDefaults` has no such rewrite to amortise. iOS still gets the
+    **read** win (8.29 ms → 0.93 ms, 8.9x) from spending one channel hop
+    instead of N.
+  * "Writes are O(store size)" was likewise Android-only: iOS is flat from 0 to
+    500 keys (183 µs → 167 µs).
+  * The Base64 finding was Android-only too — iOS already stored `Data`
+    natively, and its byte cost was already flat in payload size.
+  * Every figure in the 1.7.0 entry now names the platform it was measured on.
+* **The watcher-retention test now supports its conclusion.** The 1.6.2 entry
+  reported "no leak" from a single 200-cycle attach/detach sample. Re-running
+  that same cycle count repeatedly yields +5100 and −8765 bytes/cycle — the
+  sample sat inside the noise band and established nothing either way.
+  * `example/lib/profile_main.dart` now runs batches of 1000/2000/4000/8000 and
+    reports bytes per cycle, which separates the two cases: a leak holds that
+    figure roughly constant as cycles grow, while a heap reaching its working
+    set lets it fall toward zero.
+  * Measured on Android: −1282, 1493, 738, **189** bytes/cycle. It collapses,
+    so there is no leak. The original conclusion was correct; the evidence
+    offered for it was not.
+* **Known gap:** the iOS figures above come from a simulator in debug mode —
+  simulators reject `--profile`. They are sound as same-run ratios but are not
+  real-device latencies.
+
 ## 1.7.0
 
 Performance release, driven by profiling on an Android emulator (API 35, arm64,
