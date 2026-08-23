@@ -211,21 +211,31 @@ Future<void> main() async {
   _log('');
 
   // ---- 5. Watcher retention: RSS after attach/detach churn ----
+  // Batches of increasing size, because a single sample cannot tell a leak from
+  // heap growth. Watch bytes/cycle, not the raw delta: a real leak holds it
+  // roughly constant as cycles grow, while a heap reaching its working set lets
+  // it fall toward zero. Small batches are useless here — at 200 cycles this
+  // measurement swings between +5100 and -8765 bytes/cycle, pure noise.
   _log('## 5. Watcher attach/detach retention');
-  await _settle();
-  final rssBeforeChurn = _rss();
-  for (var round = 0; round < 200; round++) {
-    final s = ds.watchString('pad_1').listen((_) {});
-    await Future<void>.delayed(const Duration(milliseconds: 1));
-    await s.cancel();
-  }
-  await _settle();
-  final rssAfterChurn = _rss();
-  _log('RSS before 200 attach/detach cycles: ${_mb(rssBeforeChurn)} MB');
-  _log('RSS after:                           ${_mb(rssAfterChurn)} MB');
   _log(
-    'delta:                               ${_mb(rssAfterChurn - rssBeforeChurn)} MB',
+    '| cycles | RSS before (MB) | RSS after (MB) | delta (MB) | bytes/cycle |',
   );
+  _log('| ---: | ---: | ---: | ---: | ---: |');
+  for (final cycles in <int>[1000, 2000, 4000, 8000]) {
+    await _settle();
+    final before = _rss();
+    for (var round = 0; round < cycles; round++) {
+      final s = ds.watchString('pad_1').listen((_) {});
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+      await s.cancel();
+    }
+    await _settle();
+    final after = _rss();
+    _log(
+      '| $cycles | ${_mb(before)} | ${_mb(after)} | ${_mb(after - before)} '
+      '| ${((after - before) / cycles).round()} |',
+    );
+  }
   _log('');
 
   for (final s in subs) {
