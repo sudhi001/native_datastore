@@ -15,10 +15,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Native DataStore Example',
-      theme: ThemeData(
-        colorSchemeSeed: Colors.blue,
-        useMaterial3: true,
-      ),
+      theme: ThemeData(colorSchemeSeed: Colors.blue, useMaterial3: true),
       home: const DataStoreDemo(),
     );
   }
@@ -42,10 +39,7 @@ class _DataStoreDemoState extends State<DataStoreDemo> {
       appBar: AppBar(title: Text(_titles[_index])),
       body: IndexedStack(
         index: _index,
-        children: const [
-          RegularTab(),
-          SecureTab(),
-        ],
+        children: const [RegularTab(), SecureTab()],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
@@ -161,9 +155,7 @@ class _RegularTabState extends State<RegularTab> {
           await _datastore.setDateTime(key, val);
           _showMessage('Saved DateTime "$key" = ${val.toIso8601String()}');
         case 'Map':
-          final val = Map<String, dynamic>.from(
-            jsonDecode(raw) as Map,
-          );
+          final val = Map<String, dynamic>.from(jsonDecode(raw) as Map);
           await _datastore.setMap(key, val);
           _showMessage('Saved Map "$key"');
       }
@@ -216,11 +208,16 @@ class _RegularTabState extends State<RegularTab> {
     await _datastore.setInt('loginCount', 42);
     await _datastore.setDouble('rating', 4.8);
     await _datastore.setStringList('tags', ['flutter', 'dart', 'mobile']);
-    await _datastore
-        .setBytes('token', Uint8List.fromList([0x48, 0x65, 0x6C, 0x6C, 0x6F]));
+    await _datastore.setBytes(
+      'token',
+      Uint8List.fromList([0x48, 0x65, 0x6C, 0x6C, 0x6F]),
+    );
     await _datastore.setDateTime('lastLogin', DateTime.now());
-    await _datastore
-        .setMap('profile', {'name': 'sudhi', 'level': 5, 'active': true});
+    await _datastore.setMap('profile', {
+      'name': 'sudhi',
+      'level': 5,
+      'active': true,
+    });
     _showMessage('Saved sample data for all 8 types');
     await _loadAll();
   }
@@ -300,10 +297,7 @@ class _RegularTabState extends State<RegularTab> {
                 onPressed: _getValue,
                 child: Text('Get $_selectedType'),
               ),
-              OutlinedButton(
-                onPressed: _loadAll,
-                child: const Text('Get All'),
-              ),
+              OutlinedButton(onPressed: _loadAll, child: const Text('Get All')),
               FilledButton.tonal(
                 onPressed: _remove,
                 child: const Text('Remove'),
@@ -319,8 +313,10 @@ class _RegularTabState extends State<RegularTab> {
             ],
           ),
           const SizedBox(height: 24),
-          const Text('Stored Data:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const Text(
+            'Stored Data:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
           const SizedBox(height: 8),
           ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 160, maxHeight: 360),
@@ -371,9 +367,11 @@ class _SecureTabState extends State<SecureTab> {
     try {
       await _secure.configure(multiProcess: enabled);
       setState(() => _multiProcess = enabled);
-      _showMessage(enabled
-          ? 'Multi-process ON (Android: separate MultiProcessDataStore)'
-          : 'Multi-process OFF (default single-process store)');
+      _showMessage(
+        enabled
+            ? 'Multi-process ON (Android: separate MultiProcessDataStore)'
+            : 'Multi-process OFF (default single-process store)',
+      );
       await _refreshKeys();
     } on NativeDatastoreException catch (e) {
       _showMessage(e.message);
@@ -428,9 +426,11 @@ class _SecureTabState extends State<SecureTab> {
         _showMessage('$key (String) = ${value ?? "(not found)"}');
       } else {
         final value = await _secure.getBytes(key);
-        _showMessage(value == null
-            ? '$key (Bytes) = (not found)'
-            : '$key (Bytes) = ${value.toList()}');
+        _showMessage(
+          value == null
+              ? '$key (Bytes) = (not found)'
+              : '$key (Bytes) = ${value.toList()}',
+        );
       }
     } on NativeDatastoreException catch (e) {
       _showMessage(e.message);
@@ -473,7 +473,7 @@ class _SecureTabState extends State<SecureTab> {
         _output = keys.isEmpty
             ? 'Secure store is empty'
             : 'Stored keys (values are encrypted at rest):\n'
-                '${keys.map((k) => '  - $k').join('\n')}';
+                  '${keys.map((k) => '  - $k').join('\n')}';
       });
     } on NativeDatastoreException catch (e) {
       setState(() => _output = 'Error: ${e.message}');
@@ -501,15 +501,16 @@ class _SecureTabState extends State<SecureTab> {
             ),
             child: Row(
               children: [
-                Icon(Icons.shield_outlined,
-                    color: Theme.of(context).colorScheme.onSecondaryContainer),
+                Icon(
+                  Icons.shield_outlined,
+                  color: Theme.of(context).colorScheme.onSecondaryContainer,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     'iOS Keychain (afterFirstUnlock) · Android Keystore + AES-256-GCM',
                     style: TextStyle(
-                      color:
-                          Theme.of(context).colorScheme.onSecondaryContainer,
+                      color: Theme.of(context).colorScheme.onSecondaryContainer,
                       fontSize: 13,
                     ),
                   ),
@@ -594,8 +595,10 @@ class _SecureTabState extends State<SecureTab> {
             ],
           ),
           const SizedBox(height: 24),
-          const Text('Stored Secure Keys:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const Text(
+            'Stored Secure Keys:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
           const SizedBox(height: 8),
           ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 160, maxHeight: 360),

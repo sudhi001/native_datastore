@@ -1,5 +1,5 @@
 group = "in.sudhi.native_datastore"
-version = "1.5.3"
+version = "1.6.2"
 
 buildscript {
     val kotlinVersion = "2.2.20"
@@ -23,7 +23,18 @@ allprojects {
 
 plugins {
     id("com.android.library")
-    id("kotlin-android")
+}
+
+// Built-in Kotlin migration, kept compatible with Flutter older than 3.44.
+// From AGP 9 (Flutter 3.44+) the Flutter Gradle Plugin supplies Kotlin itself,
+// so a plugin that applies the Kotlin Gradle Plugin again fails the build.
+// Older AGP has no built-in Kotlin, so KGP is still applied there.
+// See https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
+val agpMajor =
+    com.android.Version.ANDROID_GRADLE_PLUGIN_VERSION.substringBefore('.').toInt()
+
+if (agpMajor < 9) {
+    apply(plugin = "org.jetbrains.kotlin.android")
 }
 
 android {
@@ -36,10 +47,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
-    }
-
     sourceSets {
         getByName("main") {
             java.srcDirs("src/main/kotlin")
@@ -48,6 +55,14 @@ android {
 
     defaultConfig {
         minSdk = 21
+    }
+}
+
+project.extensions.configure(
+    org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension::class.java,
+) {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 

@@ -21,6 +21,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 KOTLIN_OUT="android/src/main/kotlin/in/sudhi/native_datastore/Messages.g.kt"
+DART_OUT="lib/src/messages.g.dart"
 
 echo "Running pigeon..."
 dart run pigeon --input pigeons/messages.dart
@@ -35,4 +36,10 @@ if grep -q '^package in\.sudhi\.native_datastore$' "$KOTLIN_OUT"; then
   exit 1
 fi
 
-echo "Done. Bindings regenerated and Kotlin package escaped."
+# Pigeon emits the Dart bindings in the short (pre-Dart-3.7) style, which fails
+# `dart format --set-exit-if-changed` and costs pub.dev static-analysis points.
+# Re-format with the project's SDK so the checked-in file stays formatter-clean.
+echo "Formatting generated Dart bindings..."
+dart format "$DART_OUT"
+
+echo "Done. Bindings regenerated, Kotlin package escaped, Dart formatted."

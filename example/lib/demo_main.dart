@@ -84,11 +84,15 @@ class _SecureDemoState extends State<_SecureDemo> {
         _activeButton = 'sample';
         _status = 'Encrypting & storing 3 secrets…';
       });
-      await _secure.setString('refresh_token',
-          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.demo.sig');
+      await _secure.setString(
+        'refresh_token',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.demo.sig',
+      );
       await _secure.setString('api_secret', 'sk_live_demo_abc123');
       await _secure.setBytes(
-          'symmetric_key', Uint8List.fromList(List.generate(32, (i) => i)));
+        'symmetric_key',
+        Uint8List.fromList(List.generate(32, (i) => i)),
+      );
       await _refresh();
       await _beat(1300);
 
@@ -147,17 +151,21 @@ class _SecureDemoState extends State<_SecureDemo> {
                 color: cs.secondaryContainer,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Row(children: [
-                Icon(Icons.shield_outlined, color: cs.onSecondaryContainer),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'iOS Keychain · Android Keystore + AES-256-GCM',
-                    style:
-                        TextStyle(color: cs.onSecondaryContainer, fontSize: 13),
+              child: Row(
+                children: [
+                  Icon(Icons.shield_outlined, color: cs.onSecondaryContainer),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'iOS Keychain · Android Keystore + AES-256-GCM',
+                      style: TextStyle(
+                        color: cs.onSecondaryContainer,
+                        fontSize: 13,
+                      ),
+                    ),
                   ),
-                ),
-              ]),
+                ],
+              ),
             ),
             const SizedBox(height: 8),
             SwitchListTile(
@@ -180,34 +188,49 @@ class _SecureDemoState extends State<_SecureDemo> {
               child: Container(
                 key: ValueKey(_status),
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 10,
+                  horizontal: 12,
+                ),
                 decoration: BoxDecoration(
                   color: cs.primaryContainer,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(_status,
-                    style: TextStyle(
-                        color: cs.onPrimaryContainer,
-                        fontFamily: 'monospace',
-                        fontSize: 13)),
+                child: Text(
+                  _status,
+                  style: TextStyle(
+                    color: cs.onPrimaryContainer,
+                    fontFamily: 'monospace',
+                    fontSize: 13,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 12),
             // Faux key/value inputs.
             _fakeField('Key', _typedKey.isEmpty ? null : _typedKey),
             const SizedBox(height: 8),
-            _fakeField('Value',
-                _typedKey.isEmpty ? null : 'sess_9f3ac107e2', obscure: true),
+            _fakeField(
+              'Value',
+              _typedKey.isEmpty ? null : 'sess_9f3ac107e2',
+              obscure: true,
+            ),
             const SizedBox(height: 12),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              _btn('set', 'Set String', filled: true),
-              _btn('refresh', 'Refresh Keys'),
-              _btn('clear', 'Clear All'),
-              _btn('sample', 'Save Sample Secrets', filled: true),
-            ]),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _btn('set', 'Set String', filled: true),
+                _btn('refresh', 'Refresh Keys'),
+                _btn('clear', 'Clear All'),
+                _btn('sample', 'Save Sample Secrets', filled: true),
+              ],
+            ),
             const SizedBox(height: 20),
-            const Text('Stored Secure Keys:',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const Text(
+              'Stored Secure Keys:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
             const SizedBox(height: 8),
             Expanded(
               child: Container(
@@ -218,29 +241,40 @@ class _SecureDemoState extends State<_SecureDemo> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: _keys.isEmpty
-                    ? Text('Secure store is empty',
-                        style: TextStyle(color: cs.outline))
+                    ? Text(
+                        'Secure store is empty',
+                        style: TextStyle(color: cs.outline),
+                      )
                     : Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('values are encrypted at rest:',
-                              style: TextStyle(
-                                  color: cs.outline, fontSize: 12)),
+                          Text(
+                            'values are encrypted at rest:',
+                            style: TextStyle(color: cs.outline, fontSize: 12),
+                          ),
                           const SizedBox(height: 6),
                           for (final k in _keys)
                             Padding(
                               padding: const EdgeInsets.symmetric(vertical: 3),
-                              child: Row(children: [
-                                Icon(Icons.vpn_key,
-                                    size: 16, color: cs.primary),
-                                const SizedBox(width: 8),
-                                Text(k,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.vpn_key,
+                                    size: 16,
+                                    color: cs.primary,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    k,
                                     style: const TextStyle(
-                                        fontFamily: 'monospace', fontSize: 14)),
-                                const Spacer(),
-                                Icon(Icons.lock,
-                                    size: 14, color: cs.outline),
-                              ]),
+                                      fontFamily: 'monospace',
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Icon(Icons.lock, size: 14, color: cs.outline),
+                                ],
+                              ),
                             ),
                         ],
                       ),
@@ -254,27 +288,26 @@ class _SecureDemoState extends State<_SecureDemo> {
 
   Widget _fakeField(String label, String? value, {bool obscure = false}) {
     final cs = Theme.of(context).colorScheme;
-    final shown = value == null
-        ? ''
-        : (obscure ? '•' * value.length : value);
+    final shown = value == null ? '' : (obscure ? '•' * value.length : value);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       decoration: BoxDecoration(
         border: Border.all(color: cs.outlineVariant),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Row(children: [
-        Text('$label   ',
-            style: TextStyle(color: cs.outline, fontSize: 13)),
-        Text(shown, style: const TextStyle(fontSize: 14)),
-        if (value != null)
-          Container(
-            width: 2,
-            height: 16,
-            margin: const EdgeInsets.only(left: 1),
-            color: cs.primary,
-          ),
-      ]),
+      child: Row(
+        children: [
+          Text('$label   ', style: TextStyle(color: cs.outline, fontSize: 13)),
+          Text(shown, style: const TextStyle(fontSize: 14)),
+          if (value != null)
+            Container(
+              width: 2,
+              height: 16,
+              margin: const EdgeInsets.only(left: 1),
+              color: cs.primary,
+            ),
+        ],
+      ),
     );
   }
 
@@ -289,7 +322,9 @@ class _SecureDemoState extends State<_SecureDemo> {
         : OutlinedButton.styleFrom(
             side: active
                 ? BorderSide(
-                    color: Theme.of(context).colorScheme.tertiary, width: 2)
+                    color: Theme.of(context).colorScheme.tertiary,
+                    width: 2,
+                  )
                 : null,
           );
     final child = Text(label);

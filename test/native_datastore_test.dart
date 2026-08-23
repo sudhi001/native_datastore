@@ -16,13 +16,12 @@ class MockDatastoreChannel {
   /// Registers a mock handler for the given [method] that returns [result].
   static void mockMethod(String method, Object? result) {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMessageHandler(
-      '$_channelPrefix$method',
-      (ByteData? message) async {
-        // Return a success response: [result]
-        return _codec.encodeMessage(<Object?>[result]);
-      },
-    );
+        .setMockMessageHandler('$_channelPrefix$method', (
+          ByteData? message,
+        ) async {
+          // Return a success response: [result]
+          return _codec.encodeMessage(<Object?>[result]);
+        });
   }
 
   /// Registers a mock handler for the given [method] that returns an error.
@@ -33,14 +32,12 @@ class MockDatastoreChannel {
     Object? details,
   }) {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMessageHandler(
-      '$_channelPrefix$method',
-      (ByteData? message) async {
-        // Return an error response: [code, message, details]
-        return _codec
-            .encodeMessage(<Object?>[code, errorMessage, details]);
-      },
-    );
+        .setMockMessageHandler('$_channelPrefix$method', (
+          ByteData? message,
+        ) async {
+          // Return an error response: [code, message, details]
+          return _codec.encodeMessage(<Object?>[code, errorMessage, details]);
+        });
   }
 
   /// Clears all mock handlers.
@@ -248,11 +245,13 @@ void main() {
     test('rejects keys starting with reserved __list__ prefix', () {
       expect(
         () => datastore.setString('__list__:foo', 'v'),
-        throwsA(isA<NativeDatastoreException>().having(
-          (e) => e.message,
-          'message',
-          contains('reserved prefix'),
-        )),
+        throwsA(
+          isA<NativeDatastoreException>().having(
+            (e) => e.message,
+            'message',
+            contains('reserved prefix'),
+          ),
+        ),
       );
     });
 
@@ -277,11 +276,13 @@ void main() {
       );
     });
 
-    test('accepts keys that merely contain the prefix but do not start with it',
-        () async {
-      MockDatastoreChannel.mockMethod('setString', null);
-      await datastore.setString('user__list__:foo', 'v');
-    });
+    test(
+      'accepts keys that merely contain the prefix but do not start with it',
+      () async {
+        MockDatastoreChannel.mockMethod('setString', null);
+        await datastore.setString('user__list__:foo', 'v');
+      },
+    );
   });
 
   // -------------------------------------------------------
@@ -400,7 +401,10 @@ void main() {
     });
 
     test('getBytes returns value', () async {
-      MockDatastoreChannel.mockMethod('getBytes', Uint8List.fromList([1, 2, 3]));
+      MockDatastoreChannel.mockMethod(
+        'getBytes',
+        Uint8List.fromList([1, 2, 3]),
+      );
       final result = await datastore.getBytes('k');
       expect(result, Uint8List.fromList([1, 2, 3]));
     });
@@ -453,8 +457,10 @@ void main() {
   // -------------------------------------------------------
   group('error handling', () {
     test('getString wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('getString',
-          errorMessage: 'disk error');
+      MockDatastoreChannel.mockMethodError(
+        'getString',
+        errorMessage: 'disk error',
+      );
       final e = await _expectException(() => datastore.getString('k'));
       expect(e.message, contains('getString'));
       expect(e.message, contains('disk error'));
@@ -462,118 +468,107 @@ void main() {
     });
 
     test('getBool wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('getBool',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError('getBool', errorMessage: 'fail');
       final e = await _expectException(() => datastore.getBool('k'));
       expect(e.message, contains('getBool'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('getInt wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('getInt',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError('getInt', errorMessage: 'fail');
       final e = await _expectException(() => datastore.getInt('k'));
       expect(e.message, contains('getInt'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('getDouble wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('getDouble',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError('getDouble', errorMessage: 'fail');
       final e = await _expectException(() => datastore.getDouble('k'));
       expect(e.message, contains('getDouble'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('getStringList wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('getStringList',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError(
+        'getStringList',
+        errorMessage: 'fail',
+      );
       final e = await _expectException(() => datastore.getStringList('k'));
       expect(e.message, contains('getStringList'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('setString wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('setString',
-          errorMessage: 'fail');
-      final e =
-          await _expectException(() => datastore.setString('k', 'v'));
+      MockDatastoreChannel.mockMethodError('setString', errorMessage: 'fail');
+      final e = await _expectException(() => datastore.setString('k', 'v'));
       expect(e.message, contains('setString'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('setBool wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('setBool',
-          errorMessage: 'fail');
-      final e =
-          await _expectException(() => datastore.setBool('k', true));
+      MockDatastoreChannel.mockMethodError('setBool', errorMessage: 'fail');
+      final e = await _expectException(() => datastore.setBool('k', true));
       expect(e.message, contains('setBool'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('setInt wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('setInt',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError('setInt', errorMessage: 'fail');
       final e = await _expectException(() => datastore.setInt('k', 1));
       expect(e.message, contains('setInt'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('setDouble wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('setDouble',
-          errorMessage: 'fail');
-      final e =
-          await _expectException(() => datastore.setDouble('k', 1.0));
+      MockDatastoreChannel.mockMethodError('setDouble', errorMessage: 'fail');
+      final e = await _expectException(() => datastore.setDouble('k', 1.0));
       expect(e.message, contains('setDouble'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('setStringList wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('setStringList',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError(
+        'setStringList',
+        errorMessage: 'fail',
+      );
       final e = await _expectException(
-          () => datastore.setStringList('k', ['a']));
+        () => datastore.setStringList('k', ['a']),
+      );
       expect(e.message, contains('setStringList'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('remove wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('remove',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError('remove', errorMessage: 'fail');
       final e = await _expectException(() => datastore.remove('k'));
       expect(e.message, contains('remove'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('clear wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('clear',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError('clear', errorMessage: 'fail');
       final e = await _expectException(() => datastore.clear());
       expect(e.message, contains('clear'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('getAll wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('getAll',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError('getAll', errorMessage: 'fail');
       final e = await _expectException(() => datastore.getAll());
       expect(e.message, contains('getAll'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('getKeys wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('getKeys',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError('getKeys', errorMessage: 'fail');
       final e = await _expectException(() => datastore.getKeys());
       expect(e.message, contains('getKeys'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('containsKey wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('containsKey',
-          errorMessage: 'fail');
-      final e =
-          await _expectException(() => datastore.containsKey('k'));
+      MockDatastoreChannel.mockMethodError('containsKey', errorMessage: 'fail');
+      final e = await _expectException(() => datastore.containsKey('k'));
       expect(e.message, contains('containsKey'));
       expect(e.cause, isA<PlatformException>());
     });
@@ -585,52 +580,47 @@ void main() {
     });
 
     test('getBytes wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('getBytes',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError('getBytes', errorMessage: 'fail');
       final e = await _expectException(() => datastore.getBytes('k'));
       expect(e.message, contains('getBytes'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('setBytes wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('setBytes',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError('setBytes', errorMessage: 'fail');
       final e = await _expectException(
-          () => datastore.setBytes('k', Uint8List(0)));
+        () => datastore.setBytes('k', Uint8List(0)),
+      );
       expect(e.message, contains('setBytes'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('getDateTime wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('getDateTime',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError('getDateTime', errorMessage: 'fail');
       final e = await _expectException(() => datastore.getDateTime('k'));
       expect(e.message, contains('getDateTime'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('setDateTime wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('setDateTime',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError('setDateTime', errorMessage: 'fail');
       final e = await _expectException(
-          () => datastore.setDateTime('k', DateTime.now()));
+        () => datastore.setDateTime('k', DateTime.now()),
+      );
       expect(e.message, contains('setDateTime'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('getMap wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('getMap',
-          errorMessage: 'fail');
+      MockDatastoreChannel.mockMethodError('getMap', errorMessage: 'fail');
       final e = await _expectException(() => datastore.getMap('k'));
       expect(e.message, contains('getMap'));
       expect(e.cause, isA<PlatformException>());
     });
 
     test('setMap wraps PlatformException', () async {
-      MockDatastoreChannel.mockMethodError('setMap',
-          errorMessage: 'fail');
-      final e = await _expectException(
-          () => datastore.setMap('k', {'a': 1}));
+      MockDatastoreChannel.mockMethodError('setMap', errorMessage: 'fail');
+      final e = await _expectException(() => datastore.setMap('k', {'a': 1}));
       expect(e.message, contains('setMap'));
       expect(e.cause, isA<PlatformException>());
     });
@@ -649,21 +639,22 @@ void main() {
       expect(e.message, contains('getMap'));
     });
 
-    test('setMap wraps non-encodable value as NativeDatastoreException',
-        () async {
-      MockDatastoreChannel.mockMethod('setMap', null);
-      // A Dart object that jsonEncode can't serialize.
-      final e = await _expectException(
-        () => datastore.setMap('k', {'bad': Object()}),
-      );
-      expect(e.message, contains('setMap'));
-    });
+    test(
+      'setMap wraps non-encodable value as NativeDatastoreException',
+      () async {
+        MockDatastoreChannel.mockMethod('setMap', null);
+        // A Dart object that jsonEncode can't serialize.
+        final e = await _expectException(
+          () => datastore.setMap('k', {'bad': Object()}),
+        );
+        expect(e.message, contains('setMap'));
+      },
+    );
 
     test('setBytes rejects payloads over 1 MiB', () async {
       // Just over 1 MiB; should be rejected without touching the channel.
       final tooLarge = Uint8List(1024 * 1024 + 1);
-      final e =
-          await _expectException(() => datastore.setBytes('k', tooLarge));
+      final e = await _expectException(() => datastore.setBytes('k', tooLarge));
       expect(e.message, contains('too large'));
     });
 
@@ -694,20 +685,22 @@ void main() {
       // Mock handler that returns null bytes (simulating broken channel)
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMessageHandler(
-        'dev.flutter.pigeon.native_datastore.DatastoreApi.getString',
-        (ByteData? message) async => null,
-      );
+            'dev.flutter.pigeon.native_datastore.DatastoreApi.getString',
+            (ByteData? message) async => null,
+          );
       expect(
         () => datastore.getString('k'),
-        throwsA(isA<NativeDatastoreException>().having(
-          (e) => e.cause,
-          'cause',
-          isA<PlatformException>().having(
-            (e) => e.code,
-            'code',
-            'channel-error',
+        throwsA(
+          isA<NativeDatastoreException>().having(
+            (e) => e.cause,
+            'cause',
+            isA<PlatformException>().having(
+              (e) => e.code,
+              'code',
+              'channel-error',
+            ),
           ),
-        )),
+        ),
       );
     });
 
@@ -716,22 +709,24 @@ void main() {
       const codec = StandardMessageCodec();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMessageHandler(
-        'dev.flutter.pigeon.native_datastore.DatastoreApi.remove',
-        (ByteData? message) async {
-          return codec.encodeMessage(<Object?>[null]);
-        },
-      );
+            'dev.flutter.pigeon.native_datastore.DatastoreApi.remove',
+            (ByteData? message) async {
+              return codec.encodeMessage(<Object?>[null]);
+            },
+          );
       expect(
         () => datastore.remove('k'),
-        throwsA(isA<NativeDatastoreException>().having(
-          (e) => e.cause,
-          'cause',
-          isA<PlatformException>().having(
-            (e) => e.code,
-            'code',
-            'null-error',
+        throwsA(
+          isA<NativeDatastoreException>().having(
+            (e) => e.cause,
+            'cause',
+            isA<PlatformException>().having(
+              (e) => e.code,
+              'code',
+              'null-error',
+            ),
           ),
-        )),
+        ),
       );
     });
 
@@ -758,18 +753,22 @@ void main() {
     void mockSecure(String method, Object? result) {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMessageHandler(
-        '$secureChannelPrefix$method',
-        (ByteData? message) async => codec.encodeMessage(<Object?>[result]),
-      );
+            '$secureChannelPrefix$method',
+            (ByteData? message) async => codec.encodeMessage(<Object?>[result]),
+          );
     }
 
-    void mockSecureError(String method, {String code = 'test-error', String? errorMessage}) {
+    void mockSecureError(
+      String method, {
+      String code = 'test-error',
+      String? errorMessage,
+    }) {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMessageHandler(
-        '$secureChannelPrefix$method',
-        (ByteData? message) async =>
-            codec.encodeMessage(<Object?>[code, errorMessage, null]),
-      );
+            '$secureChannelPrefix$method',
+            (ByteData? message) async =>
+                codec.encodeMessage(<Object?>[code, errorMessage, null]),
+          );
     }
 
     late SecureDatastore secure;
@@ -824,10 +823,7 @@ void main() {
     });
 
     test('remove throws on empty key', () {
-      expect(
-        () => secure.remove(''),
-        throwsA(isA<NativeDatastoreException>()),
-      );
+      expect(() => secure.remove(''), throwsA(isA<NativeDatastoreException>()));
     });
 
     test('containsKey throws on empty key', () {
@@ -840,11 +836,13 @@ void main() {
     test('rejects keys starting with reserved __str__ prefix', () {
       expect(
         () => secure.setString('__str__:foo', 'v'),
-        throwsA(isA<NativeDatastoreException>().having(
-          (e) => e.message,
-          'message',
-          contains('reserved prefix'),
-        )),
+        throwsA(
+          isA<NativeDatastoreException>().having(
+            (e) => e.message,
+            'message',
+            contains('reserved prefix'),
+          ),
+        ),
       );
     });
 
@@ -921,8 +919,7 @@ void main() {
 
     test('setBytes rejects payloads over 1 MiB', () async {
       final tooLarge = Uint8List(1024 * 1024 + 1);
-      final e =
-          await _expectException(() => secure.setBytes('k', tooLarge));
+      final e = await _expectException(() => secure.setBytes('k', tooLarge));
       expect(e.message, contains('too large'));
     });
 
@@ -947,6 +944,26 @@ void main() {
       final e = await _expectException(() => secure.configure());
       expect(e.message, contains('secure configure'));
       expect(e.cause, isA<PlatformException>());
+    });
+
+    test('SecureDatastoreApi honours messageChannelSuffix', () {
+      expect(
+        SecureDatastoreApi(
+          messageChannelSuffix: 'test',
+        ).pigeonVar_messageChannelSuffix,
+        '.test',
+      );
+      expect(SecureDatastoreApi().pigeonVar_messageChannelSuffix, '');
+    });
+
+    test('non-platform failures are wrapped too', () async {
+      // An `int` where the generated API casts to `String?` makes the Pigeon
+      // stub throw a TypeError rather than a PlatformException, exercising the
+      // catch-all arm of the guard.
+      mockSecure('getString', 42);
+      final e = await _expectException(() => secure.getString('k'));
+      expect(e.message, contains('secure getString("k")'));
+      expect(e.cause, isNot(isA<PlatformException>()));
     });
   });
 
@@ -1041,8 +1058,7 @@ void main() {
     });
 
     test('configure surfaces platform errors', () async {
-      MockDatastoreChannel.mockMethodError('configure',
-          errorMessage: 'boom');
+      MockDatastoreChannel.mockMethodError('configure', errorMessage: 'boom');
       final e = await _expectException(() => datastore.configure());
       expect(e.message, contains('configure'));
     });
@@ -1094,18 +1110,114 @@ void main() {
       expect(received.single, <String>['count', 'name']);
     });
 
-    // Note: the per-key re-read/filter behaviour of watchInt/watchString/etc.
-    // (emit the initial value, then re-read only when the changed-keys list
-    // contains the watched key) is exercised on-device by the example's
-    // integration test — unit-mocking the ordering of the EventChannel
-    // subscription against the initial async read is brittle and adds no
-    // coverage over the two tests above plus that integration test.
+    test(
+      'every typed watcher emits the current value on subscription',
+      () async {
+        MockDatastoreChannel.mockMethod('getBool', true);
+        MockDatastoreChannel.mockMethod('getInt', 7);
+        MockDatastoreChannel.mockMethod('getDouble', 2.5);
+        MockDatastoreChannel.mockMethod('getStringList', <String>['a', 'b']);
+        MockDatastoreChannel.mockMethod(
+          'getBytes',
+          Uint8List.fromList(<int>[1, 2]),
+        );
+        MockDatastoreChannel.mockMethod('getDateTime', 1700000000000);
+        MockDatastoreChannel.mockMethod('getMap', '{"a":1}');
+
+        expect(await datastore.watchBool('k').first, isTrue);
+        expect(await datastore.watchInt('k').first, 7);
+        expect(await datastore.watchDouble('k').first, 2.5);
+        expect(await datastore.watchStringList('k').first, <String>['a', 'b']);
+        expect(await datastore.watchBytes('k').first, <int>[1, 2]);
+        expect(
+          await datastore.watchDateTime('k').first,
+          DateTime.fromMillisecondsSinceEpoch(1700000000000, isUtc: true),
+        );
+        expect(await datastore.watchMap('k').first, <String, dynamic>{'a': 1});
+      },
+    );
+
+    test('watchInt re-reads only when the watched key changes', () async {
+      MockDatastoreChannel.mockMethod('getInt', 1);
+      final received = <int?>[];
+      final sub = datastore.watchInt('count').listen(received.add);
+
+      // Let the initial read settle so `_watch` reaches the change loop and
+      // the mock stream handler hands us a sink.
+      await pumpEventQueue();
+      expect(received, <int?>[1]);
+      expect(sinks, hasLength(1));
+
+      // A change that names the watched key triggers a re-read.
+      MockDatastoreChannel.mockMethod('getInt', 2);
+      sinks.single.success(<String>['count', 'other']);
+      await pumpEventQueue();
+
+      // A change that does not name it is ignored.
+      MockDatastoreChannel.mockMethod('getInt', 99);
+      sinks.single.success(<String>['other']);
+      await pumpEventQueue();
+
+      // Cancelling must complete promptly and release the platform observer,
+      // even though the change stream itself never ends.
+      await sub.cancel().timeout(const Duration(seconds: 5));
+      expect(received, <int?>[1, 2]);
+    });
+
+    test('a closed change stream closes the watcher', () async {
+      MockDatastoreChannel.mockMethod('getInt', 1);
+      var done = false;
+      final sub = datastore
+          .watchInt('count')
+          .listen(
+            null,
+            onDone: () {
+              done = true;
+            },
+          );
+      await pumpEventQueue();
+
+      sinks.single.endOfStream();
+      await pumpEventQueue();
+      await sub.cancel();
+
+      expect(done, isTrue);
+    });
+
+    test('a failing read surfaces as a stream error', () async {
+      MockDatastoreChannel.mockMethodError('getInt', errorMessage: 'boom');
+      expect(
+        datastore.watchInt('count').first,
+        throwsA(isA<NativeDatastoreException>()),
+      );
+    });
+
+    test('a change-stream error surfaces on the watcher', () async {
+      MockDatastoreChannel.mockMethod('getInt', 1);
+      final errors = <Object>[];
+      final sub = datastore.watchInt('count').listen(null, onError: errors.add);
+      await pumpEventQueue();
+
+      sinks.single.error(code: 'boom', message: 'observer failed');
+      await pumpEventQueue();
+      await sub.cancel();
+
+      expect(errors.single, isA<PlatformException>());
+    });
+
+    test('watchString validates the key before subscribing', () async {
+      expect(
+        () => datastore.watchString('').first,
+        throwsA(isA<NativeDatastoreException>()),
+      );
+    });
   });
 }
 
 /// Helper that expects a [NativeDatastoreException] to be thrown.
 Future<NativeDatastoreException> _expectException(
-    Future<Object?> Function() fn) async {
+  Future<Object?> Function() fn,
+) async {
   try {
     await fn();
   } on NativeDatastoreException catch (e) {
