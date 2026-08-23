@@ -56,6 +56,9 @@ class MockDatastoreChannel {
       'remove',
       'clear',
       'getAll',
+      'getMany',
+      'setMany',
+      'removeMany',
       'getKeys',
       'containsKey',
       'getBytes',
@@ -964,6 +967,119 @@ void main() {
       final e = await _expectException(() => secure.getString('k'));
       expect(e.message, contains('secure getString("k")'));
       expect(e.cause, isNot(isA<PlatformException>()));
+    });
+  });
+
+  // -------------------------------------------------------
+  // Batch API
+  // -------------------------------------------------------
+  group('batch operations', () {
+    late NativeDatastore datastore;
+
+    setUp(() {
+      datastore = NativeDatastore();
+      MockDatastoreChannel.reset();
+    });
+
+    test('getMany returns the decoded map', () async {
+      MockDatastoreChannel.mockMethod('getMany', <Object?, Object?>{
+        'a': 'x',
+        'n': 7,
+        'list': <Object?>['p', 'q'],
+      });
+      final result = await datastore.getMany(<String>[
+        'a',
+        'n',
+        'list',
+        'gone',
+      ]);
+      expect(result['a'], 'x');
+      expect(result['n'], 7);
+      expect(result['list'], <String>['p', 'q']);
+      expect(result.containsKey('gone'), isFalse);
+    });
+
+    test('getMany short-circuits an empty key list', () async {
+      // No mock registered — a platform hop here would throw.
+      expect(await datastore.getMany(<String>[]), isEmpty);
+    });
+
+    test('getMany validates every key', () async {
+      final e = await _expectException(
+        () => datastore.getMany(<String>['ok', '']),
+      );
+      expect(e.message, contains('must not be empty'));
+    });
+
+    test('getMany surfaces platform errors', () async {
+      MockDatastoreChannel.mockMethodError('getMany', errorMessage: 'boom');
+      final e = await _expectException(() => datastore.getMany(<String>['a']));
+      expect(e.message, contains('getMany(1 keys)'));
+    });
+
+    test('setMany accepts every supported value type', () async {
+      MockDatastoreChannel.mockMethod('setMany', null);
+      await datastore.setMany(<String, Object>{
+        's': 'text',
+        'b': true,
+        'i': 3,
+        'd': 2.5,
+        'l': <String>['a', 'b'],
+      });
+    });
+
+    test('setMany short-circuits an empty map', () async {
+      await datastore.setMany(<String, Object>{});
+    });
+
+    test('setMany rejects unsupported value types', () async {
+      final e = await _expectException(
+        () => datastore.setMany(<String, Object>{
+          'ok': 'fine',
+          'bad': Uint8List.fromList(<int>[1, 2]),
+        }),
+      );
+      expect(e.message, contains('unsupported value type'));
+      expect(e.message, contains('bad'));
+    });
+
+    test('setMany validates keys', () async {
+      final e = await _expectException(
+        () => datastore.setMany(<String, Object>{'': 'v'}),
+      );
+      expect(e.message, contains('must not be empty'));
+    });
+
+    test('setMany surfaces platform errors', () async {
+      MockDatastoreChannel.mockMethodError('setMany', errorMessage: 'boom');
+      final e = await _expectException(
+        () => datastore.setMany(<String, Object>{'a': 'b'}),
+      );
+      expect(e.message, contains('setMany(1 keys)'));
+    });
+
+    test('removeMany returns the removed count', () async {
+      MockDatastoreChannel.mockMethod('removeMany', 2);
+      expect(await datastore.removeMany(<String>['a', 'b', 'c']), 2);
+    });
+
+    test('removeMany short-circuits an empty key list', () async {
+      expect(await datastore.removeMany(<String>[]), 0);
+    });
+
+    test('removeMany validates every key', () async {
+      final e = await _expectException(
+        () => datastore.removeMany(<String>['']),
+      );
+      expect(e.message, contains('must not be empty'));
+    });
+
+    test('removeMany surfaces platform errors', () async {
+      MockDatastoreChannel.mockMethodError('removeMany', errorMessage: 'boom');
+      final e = await _expectException(
+        () => datastore.removeMany(<String>['a']),
+      );
+      expect(e.message, contains('removeMany(1 keys)'));
     });
   });
 
