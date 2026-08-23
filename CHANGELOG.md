@@ -29,13 +29,25 @@ emulator numbers and will differ on real hardware.
     runtime type — so no migration is required.
   * The multi-process JSON serializer gained a `"ba"` type for byte payloads,
     which it previously dropped silently.
-* **iOS: the change-stream diff no longer runs on every app-wide write.**
+* **iOS: the change-stream diff no longer blocks the main thread.**
   `UserDefaults.didChangeNotification` fires for *any* write in the app, and each
   one ran a full `dictionaryRepresentation()` snapshot and diff synchronously on
-  the posting thread (usually main). Notifications are now coalesced — a burst
-  schedules exactly one diff — and the diff runs off the main thread. A repeated
-  `onListen` without an intervening `onCancel` no longer registers a duplicate
-  observer.
+  the posting thread — usually main. The diff now runs on a serial background
+  queue, so an app writing its own unrelated defaults no longer stalls the main
+  thread on this plugin's bookkeeping. A repeated `onListen` without an
+  intervening `onCancel` no longer registers a duplicate observer.
+  * The per-notification snapshot itself is unchanged. Coalescing bursts into a
+    single diff was tried and reverted: it drops intermediate values, so two
+    quick writes surfaced only the last.
+* **Documented an iOS `watch*` limitation that predates this release.**
+  `UserDefaults.didChangeNotification` is coalesced by the system, so several
+  writes within one runloop turn post a single notification and an intermediate
+  value can be skipped. Android's DataStore emits per write and is unaffected.
+  The `watch*` doc comments now say so: treat the stream as "the current value,
+  kept fresh", not "every value this key ever held". Found by running the
+  on-device integration suite on an iOS simulator for the first time — the
+  existing watch test fails on iOS at `main`, independently of this release's
+  changes.
 * **iOS fix: atomic operations are now atomic across processes.** `incrementInt`,
   `incrementDouble`, `toggleBool` and `compareAndSet*` were guarded only by an
   in-process serial queue. Once `configure(appGroupId:)` points storage at a
@@ -49,16 +61,27 @@ emulator numbers and will differ on real hardware.
   secure operation). A crypto failure drops the cached handle and retries once,
   so a key invalidated out from under the process recovers instead of failing
   every subsequent call.
-  * Honest note: this produced **no measurable improvement** on the emulator,
-    where the keystore is a software implementation. The same is true of moving
-    secure ciphertext off Base64. Secure reads remain ~5x regular reads, so that
-    gap is dominated by AES-GCM and the separate store file, not by the keystore
-    IPC or Base64 as first supposed. Both changes remove real redundant work and
-    should matter more against a hardware-backed keystore and for large secure
-    payloads, but that is unmeasured here.
+  * The per-thread `Cipher` instance is also cached, so `Cipher.getInstance`
+    no longer walks the JCA provider list on every operation.
+  * Honest note: none of the three secure-path changes (key caching, `Cipher`
+    caching, dropping Base64 from ciphertext) produced a **measurable**
+    improvement. The secure/regular read ratio held at 4.9x-5.3x across four
+    clean runs. With those three candidate costs eliminated, the remaining
+    overhead is the per-operation round trip to the keystore daemon that
+    `cipher.init`/`doFinal` require for a non-extractable key — inherent to the
+    security model, and not removable without extracting the key. The changes
+    are kept because they delete genuinely redundant work that should matter
+    more against a hardware-backed keystore and for large secure payloads, but
+    that remains unmeasured.
+* **`remove`/`removeMany` no longer scan the whole store.** `Preferences.Key`
+  equality is by name alone, so a String-typed probe matches whatever type is
+  stored under that name — turning removal into a few O(1) `contains` lookups
+  instead of a pass over every key. `removeMany` now counts keys removed rather
+  than bucket entries, matching its documented contract.
 * **Tests:** 149 unit tests at 100% line coverage, plus on-device integration
   coverage for the batch API and for byte round-trips at 0 B, 1 B, 1 KB and
-  256 KB.
+  256 KB. The integration suite now runs green on **both** an Android emulator
+  and an iOS simulator.
 * **Tooling:** added `example/lib/profile_main.dart`, a memory and scaling
   harness (`flutter run --profile -t lib/profile_main.dart`). It caught a real
   regression during this work: an early version of the byte change removed the

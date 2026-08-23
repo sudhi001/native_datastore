@@ -14,6 +14,7 @@ import androidx.datastore.preferences.core.byteArrayPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -423,17 +424,31 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
 
     // ---------- Remove / Clear ----------
 
+    /**
+     * Removes every bucket variant of [key], reporting whether anything went.
+     *
+     * `Preferences.Key` equality is by name alone (the class holds no other
+     * state), so a String-typed probe matches whatever type is actually stored
+     * under that name. That turns removal into a handful of O(1) `contains`
+     * lookups instead of a scan over every key in the store.
+     */
+    private fun removeAllBuckets(prefs: MutablePreferences, key: String): Boolean {
+        var removed = false
+        for (name in bucketCandidates(key)) {
+            val probe = stringPreferencesKey(name)
+            if (prefs.contains(probe)) {
+                prefs.remove(probe)
+                removed = true
+            }
+        }
+        return removed
+    }
+
     override fun remove(key: String, callback: (Result<Boolean>) -> Unit) {
         launchOnAttached(callback) { ctx ->
-            val candidates = bucketCandidates(key)
             var removed = false
             storeFor(ctx).edit { prefs ->
-                val matching = prefs.asMap().keys.filter { it.name in candidates }
-                for (prefKey in matching) {
-                    @Suppress("UNCHECKED_CAST")
-                    prefs.remove(prefKey as Preferences.Key<Any>)
-                    removed = true
-                }
+                removed = removeAllBuckets(prefs, key)
             }
             removed
         }
@@ -530,14 +545,12 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
 
     override fun removeMany(keys: List<String>, callback: (Result<Long>) -> Unit) {
         launchOnAttached(callback) { ctx ->
-            val candidates = keys.flatMapTo(HashSet()) { bucketCandidates(it) }
             var removed = 0L
             storeFor(ctx).edit { prefs ->
-                val matching = prefs.asMap().keys.filter { it.name in candidates }
-                for (prefKey in matching) {
-                    @Suppress("UNCHECKED_CAST")
-                    prefs.remove(prefKey as Preferences.Key<Any>)
-                    removed++
+                // Counts keys removed, not bucket entries, so the result lines
+                // up with what the caller asked for.
+                for (key in keys) {
+                    if (removeAllBuckets(prefs, key)) removed++
                 }
             }
             removed

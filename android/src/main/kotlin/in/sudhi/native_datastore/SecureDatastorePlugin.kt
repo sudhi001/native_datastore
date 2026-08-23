@@ -51,8 +51,17 @@ internal class SecureCrypto(private val keyAlias: String) {
         private const val AES_KEY_SIZE_BITS = 256
     }
 
+    // `Cipher.getInstance` walks the JCA provider list on every call. The
+    // instance is stateful, so it cannot be shared across threads — but the
+    // plugin's coroutines run on Dispatchers.IO, a bounded pool, so a
+    // ThreadLocal keeps the lookup to once per worker thread. Each use
+    // re-`init`s, which resets any prior state.
+    private val cipherCache = ThreadLocal.withInitial {
+        Cipher.getInstance(TRANSFORMATION)
+    }
+
     fun encrypt(plaintext: ByteArray): ByteArray {
-        val cipher = Cipher.getInstance(TRANSFORMATION)
+        val cipher = cipherCache.get()
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
         val iv = cipher.iv
         check(iv.size == IV_LENGTH_BYTES) { "Unexpected IV length: ${iv.size}" }
@@ -66,7 +75,7 @@ internal class SecureCrypto(private val keyAlias: String) {
         }
         val iv = encrypted.copyOfRange(0, IV_LENGTH_BYTES)
         val ciphertext = encrypted.copyOfRange(IV_LENGTH_BYTES, encrypted.size)
-        val cipher = Cipher.getInstance(TRANSFORMATION)
+        val cipher = cipherCache.get()
         cipher.init(
             Cipher.DECRYPT_MODE,
             getOrCreateKey(),

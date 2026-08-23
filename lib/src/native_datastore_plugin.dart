@@ -604,10 +604,22 @@ class NativeDatastore {
   /// then a new value whenever it changes. Emits `null` when the key is absent
   /// or removed.
   ///
+  /// {@template native_datastore.watch_coalescing}
+  /// **Platform note.** On Android every write produces its own emission. On
+  /// iOS the stream is driven by `UserDefaults.didChangeNotification`, which
+  /// the system coalesces — several writes within one runloop turn post a
+  /// single notification, so an intermediate value can be skipped and only the
+  /// latest observed. Treat the stream as "the current value, kept fresh"
+  /// rather than "every value this key ever held"; do not use it to count
+  /// changes or to drive a state machine that must see each step.
+  /// {@endtemplate}
+  ///
   /// {@macro native_datastore.getter}
   Stream<String?> watchString(String key) => _watch(key, () => getString(key));
 
   /// Watches the [bool] at [key]. See [watchString].
+  ///
+  /// {@macro native_datastore.watch_coalescing}
   Stream<bool?> watchBool(String key) => _watch(key, () => getBool(key));
 
   /// Watches the [int] at [key]. See [watchString].
@@ -633,6 +645,8 @@ class NativeDatastore {
 
   /// Emits the list of user-facing keys that changed on every store mutation.
   /// Useful for observing the whole store rather than a single key.
+  ///
+  /// {@macro native_datastore.watch_coalescing}
   Stream<List<String>> watchChanges() => _changes;
 
   // ---- Migration ----
