@@ -636,13 +636,18 @@ class DatastoreChangesStreamHandler: NSObject, FlutterStreamHandler {
     /// `UserDefaults.didChangeNotification` fires for *any* write in the app,
     /// not just this plugin's, and each one used to run a full
     /// `dictionaryRepresentation()` snapshot and diff synchronously on the
-    /// posting thread (usually main). An app writing its own unrelated defaults
-    /// in a loop paid that cost every time.
+    /// posting thread — usually main. The diff now runs on this serial queue
+    /// instead, so an app writing its own unrelated defaults no longer stalls
+    /// the main thread on our bookkeeping.
     ///
-    /// Notifications are now coalesced: a burst schedules exactly one diff, and
-    /// the diff runs off the main thread.
+    /// The queue is serial, so diffs stay strictly ordered and `snapshot` is
+    /// only ever touched here.
+    ///
+    /// Deliberately *not* coalesced: collapsing a burst into a single diff
+    /// would drop intermediate values, so two quick writes would surface only
+    /// the last one. Watchers are documented to see each change, and the
+    /// on-device integration test asserts it.
     private let diffQueue = DispatchQueue(label: "native_datastore.changes")
-    private var diffScheduled = false
 
     init(plugin: NativeDatastorePlugin) {
         self.plugin = plugin
@@ -664,16 +669,7 @@ class DatastoreChangesStreamHandler: NSObject, FlutterStreamHandler {
     }
 
     @objc private func defaultsChanged() {
-        diffQueue.async { [weak self] in
-            guard let self else { return }
-            // Collapse a burst of notifications into a single diff.
-            if self.diffScheduled { return }
-            self.diffScheduled = true
-            self.diffQueue.async {
-                self.diffScheduled = false
-                self.emitChanges()
-            }
-        }
+        diffQueue.async { [weak self] in self?.emitChanges() }
     }
 
     private func emitChanges() {

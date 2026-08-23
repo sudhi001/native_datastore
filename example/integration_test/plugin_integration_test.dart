@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -281,6 +282,14 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 300));
 
     await datastore.setInt('counter', 11);
+    if (Platform.isIOS) {
+      // `UserDefaults.didChangeNotification` is coalesced by the OS: several
+      // writes in one runloop turn post a single notification, so an
+      // intermediate value can be missed. Android's DataStore emits per write
+      // and needs no spacing. Space the writes here so both are observable on
+      // either platform.
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }
     await datastore.incrementInt('counter'); // -> 12
     await Future<void>.delayed(const Duration(milliseconds: 400));
 
