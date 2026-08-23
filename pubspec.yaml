@@ -3,7 +3,7 @@ description: >-
   Type-safe, async-first key-value storage for Flutter, backed by Android
   Jetpack DataStore and iOS UserDefaults. A modern alternative to
   shared_preferences.
-version: 1.6.2
+version: 1.7.0
 homepage: https://sudhi.in
 repository: https://github.com/sudhi001/native_datastore
 issue_tracker: https://github.com/sudhi001/native_datastore/issues

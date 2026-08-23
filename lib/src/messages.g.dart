@@ -499,6 +499,75 @@ class DatastoreApi {
     );
   }
 
+  /// Reads [keys] in a single call. Absent keys are omitted from the result,
+  /// so the caller can distinguish "missing" from "stored null".
+  Future<Map<String, Object>> getMany(List<String> keys) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.native_datastore.DatastoreApi.getMany$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[keys],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return (pigeonVar_replyValue! as Map<Object?, Object?>)
+        .cast<String, Object>();
+  }
+
+  /// Writes every entry of [entries] in a single native transaction. Values
+  /// must be String, bool, int, double or List<String>.
+  Future<void> setMany(Map<String, Object> entries) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.native_datastore.DatastoreApi.setMany$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[entries],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+  }
+
+  /// Removes [keys] in a single native transaction, returning how many were
+  /// actually present.
+  Future<int> removeMany(List<String> keys) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.native_datastore.DatastoreApi.removeMany$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[keys],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as int;
+  }
+
   /// Atomically adds [delta] to the int at [key] (treating a missing value as
   /// 0) and returns the new value.
   Future<int> incrementInt(String key, int delta) async {

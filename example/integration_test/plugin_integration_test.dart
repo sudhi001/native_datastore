@@ -296,4 +296,80 @@ void main() {
 
     await datastore.clear();
   });
+
+  testWidgets('batch operations round-trip on device', (
+    WidgetTester tester,
+  ) async {
+    final datastore = NativeDatastore();
+    await datastore.clear();
+
+    await datastore.setMany(<String, Object>{
+      'b_string': 'hello',
+      'b_bool': true,
+      'b_int': 42,
+      'b_double': 1.5,
+      'b_list': <String>['x', 'y'],
+    });
+
+    final many = await datastore.getMany(<String>[
+      'b_string',
+      'b_bool',
+      'b_int',
+      'b_double',
+      'b_list',
+      'b_absent',
+    ]);
+    expect(many['b_string'], 'hello');
+    expect(many['b_bool'], true);
+    expect(many['b_int'], 42);
+    expect(many['b_double'], 1.5);
+    expect(many['b_list'], <String>['x', 'y']);
+    // Absent keys are omitted rather than mapped to null.
+    expect(many.containsKey('b_absent'), false);
+
+    // Values written in a batch must be readable through the typed getters.
+    expect(await datastore.getString('b_string'), 'hello');
+    expect(await datastore.getInt('b_int'), 42);
+    expect(await datastore.getStringList('b_list'), <String>['x', 'y']);
+
+    expect(
+      await datastore.removeMany(<String>['b_string', 'b_list', 'b_absent']),
+      2,
+    );
+    expect(await datastore.getString('b_string'), isNull);
+    expect(await datastore.getStringList('b_list'), isNull);
+    expect(await datastore.getInt('b_int'), 42);
+
+    await datastore.clear();
+  });
+
+  testWidgets('bytes round-trip across payload sizes', (
+    WidgetTester tester,
+  ) async {
+    final datastore = NativeDatastore();
+    await datastore.clear();
+
+    // Exercises the native byte-array storage path, including a payload large
+    // enough that the old Base64 encoding dominated.
+    for (final size in <int>[0, 1, 1024, 256 * 1024]) {
+      final blob = Uint8List(size);
+      for (var i = 0; i < size; i++) {
+        blob[i] = (i * 31) & 0xff;
+      }
+      await datastore.setBytes('blob', blob);
+      final read = await datastore.getBytes('blob');
+      expect(read, isNotNull, reason: 'size $size came back null');
+      expect(read!.length, size, reason: 'size $size length mismatch');
+      expect(read, equals(blob), reason: 'size $size content mismatch');
+    }
+
+    // getAll must surface bytes in their decoded form too.
+    final all = await datastore.getAll();
+    expect(all['blob'], isA<Uint8List>());
+
+    expect(await datastore.remove('blob'), true);
+    expect(await datastore.getBytes('blob'), isNull);
+
+    await datastore.clear();
+  });
 }

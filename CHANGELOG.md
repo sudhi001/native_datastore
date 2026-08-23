@@ -1,3 +1,70 @@
+## 1.7.0
+
+Performance release, driven by profiling on an Android emulator (API 35, arm64,
+profile mode). Ratios below are same-run comparisons; absolute microseconds are
+emulator numbers and will differ on real hardware.
+
+* **New: batch API — `getMany`, `setMany`, `removeMany`.** Reading keys one at a
+  time costs one channel hop each, and on Android each hop materialises the whole
+  store snapshot; writing one at a time rewrites the whole preferences file per
+  key. Batching collapses both into a single native transaction.
+  * 200 keys, same run: reads **47.0 ms → 1.04 ms (45x)**, writes
+    **374.3 ms → 2.31 ms (162x)**.
+  * `setMany` is all-or-nothing: values are converted before the transaction
+    opens, so an unsupported type fails before anything is written.
+  * `getMany` omits absent keys rather than mapping them to `null`, so a missing
+    key stays distinguishable from a stored one.
+  * Values must be `String`, `bool`, `int`, `double` or `List<String>`; use the
+    typed setters for `Uint8List`, `DateTime` and `Map`, which carry type
+    information the batch path does not.
+* **Byte payloads are stored natively on Android instead of Base64.** Base64
+  inflated every blob ~33% on disk and, because the JVM holds strings as UTF-16,
+  roughly 2.7x in memory on top of the byte array itself. `setBytes`/`getBytes`
+  now use DataStore's `byteArrayPreferencesKey`.
+  * Cost is now essentially flat in payload size. Same run, 1 KB → 1 MB:
+    `setBytes` **7.6 ms → 506 ms (66x growth)** before, **5.3 ms → 9.4 ms
+    (1.8x)** after; `getBytes` **1.2 ms → 117.8 ms (96x)** before, **1.0 ms →
+    0.95 ms (flat)** after.
+  * Existing Base64 values are still read — the reader branches on the stored
+    runtime type — so no migration is required.
+  * The multi-process JSON serializer gained a `"ba"` type for byte payloads,
+    which it previously dropped silently.
+* **iOS: the change-stream diff no longer runs on every app-wide write.**
+  `UserDefaults.didChangeNotification` fires for *any* write in the app, and each
+  one ran a full `dictionaryRepresentation()` snapshot and diff synchronously on
+  the posting thread (usually main). Notifications are now coalesced — a burst
+  schedules exactly one diff — and the diff runs off the main thread. A repeated
+  `onListen` without an intervening `onCancel` no longer registers a duplicate
+  observer.
+* **iOS fix: atomic operations are now atomic across processes.** `incrementInt`,
+  `incrementDouble`, `toggleBool` and `compareAndSet*` were guarded only by an
+  in-process serial queue. Once `configure(appGroupId:)` points storage at a
+  shared suite, an app extension in another process could interleave its own
+  read-modify-write and silently lose an update — so the operations this plugin
+  advertises as atomic were not. They now take an advisory `flock` on a lock file
+  in the App Group container. With no App Group configured there is no second
+  process to race, and the lock is skipped entirely.
+* **Android: the AndroidKeyStore key handle is cached** instead of being
+  re-resolved on every encrypt and decrypt (two keystore-daemon round trips per
+  secure operation). A crypto failure drops the cached handle and retries once,
+  so a key invalidated out from under the process recovers instead of failing
+  every subsequent call.
+  * Honest note: this produced **no measurable improvement** on the emulator,
+    where the keystore is a software implementation. The same is true of moving
+    secure ciphertext off Base64. Secure reads remain ~5x regular reads, so that
+    gap is dominated by AES-GCM and the separate store file, not by the keystore
+    IPC or Base64 as first supposed. Both changes remove real redundant work and
+    should matter more against a hardware-backed keystore and for large secure
+    payloads, but that is unmeasured here.
+* **Tests:** 149 unit tests at 100% line coverage, plus on-device integration
+  coverage for the batch API and for byte round-trips at 0 B, 1 B, 1 KB and
+  256 KB.
+* **Tooling:** added `example/lib/profile_main.dart`, a memory and scaling
+  harness (`flutter run --profile -t lib/profile_main.dart`). It caught a real
+  regression during this work: an early version of the byte change removed the
+  legacy key immediately after writing the new one, and because `Preferences.Key`
+  equality is by name alone, that deleted the value just written.
+
 ## 1.6.2
 
 * **Fix: `cancel()` on a `watch*` subscription now completes immediately.**

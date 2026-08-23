@@ -10,6 +10,7 @@ import androidx.datastore.core.Serializer
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.byteArrayPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
@@ -35,9 +36,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 // Serializes a Preferences snapshot to type-tagged JSON so it can back a
-// MultiProcessDataStore. The plugin only ever stores String, Boolean, Long and
-// Double preference values (lists/bytes/dates/maps live in String or Long
-// buckets), so those four types cover everything.
+// MultiProcessDataStore. The plugin stores String, Boolean, Long, Double and —
+// since 1.7.0, for byte payloads — ByteArray preference values (lists/dates/maps
+// live in String or Long buckets), so those five types cover everything.
 internal object PreferencesJsonSerializer : Serializer<Preferences> {
     override val defaultValue: Preferences = emptyPreferences()
 
@@ -53,6 +54,10 @@ internal object PreferencesJsonSerializer : Serializer<Preferences> {
                 "b" -> prefs[booleanPreferencesKey(name)] = entry.getBoolean("v")
                 "l" -> prefs[longPreferencesKey(name)] = entry.getLong("v")
                 "d" -> prefs[doublePreferencesKey(name)] = entry.getDouble("v")
+                // Byte payloads must still be Base64 here: this store is a JSON
+                // file, so there is no native binary slot to use.
+                "ba" -> prefs[byteArrayPreferencesKey(name)] =
+                    Base64.decode(entry.getString("v"), Base64.DEFAULT)
             }
         }
         return prefs
@@ -67,6 +72,9 @@ internal object PreferencesJsonSerializer : Serializer<Preferences> {
                 is Boolean -> entry.put("t", "b").put("v", value)
                 is Long -> entry.put("t", "l").put("v", value)
                 is Double -> entry.put("t", "d").put("v", value)
+                is ByteArray ->
+                    entry.put("t", "ba")
+                        .put("v", Base64.encodeToString(value, Base64.NO_WRAP))
                 else -> continue
             }
             obj.put(key.name, entry)
@@ -437,6 +445,105 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
         }
     }
 
+    // ---------- Batch ----------
+
+    /**
+     * Decodes one stored entry back to the value shape the Dart side expects,
+     * mirroring [getAll]'s per-bucket handling.
+     */
+    private fun decodeStored(bucket: String?, value: Any): Any = when (bucket) {
+        LIST_BUCKET -> {
+            val jsonArray = JSONArray(value as String)
+            List(jsonArray.length()) { i -> jsonArray.getString(i) }
+        }
+        // Native ByteArray since 1.7.0; String is the legacy Base64 form.
+        BYTES_BUCKET -> if (value is ByteArray) {
+            value
+        } else {
+            Base64.decode(value as String, Base64.DEFAULT)
+        }
+        else -> value
+    }
+
+    override fun getMany(keys: List<String>, callback: (Result<Map<String, Any>>) -> Unit) {
+        launchOnAttached(callback) { ctx ->
+            // One snapshot for the whole batch instead of one per key.
+            val prefs = storeFor(ctx).data.first()
+            val wanted = keys.toHashSet()
+            val result = mutableMapOf<String, Any>()
+            for ((prefKey, value) in prefs.asMap()) {
+                val (realKey, bucket) = stripBucket(prefKey.name)
+                if (realKey in wanted) {
+                    result[realKey] = decodeStored(bucket, value)
+                }
+            }
+            result
+        }
+    }
+
+    /** A value already converted to the exact form the store holds. */
+    private data class PreparedWrite(val name: String, val value: Any)
+
+    override fun setMany(entries: Map<String, Any>, callback: (Result<Unit>) -> Unit) {
+        launchOnAttached(callback) { ctx ->
+            // Convert outside the transaction so an unsupported value fails
+            // before anything is written, keeping the batch all-or-nothing.
+            val prepared = entries.map { (key, value) -> prepareWrite(key, value) }
+            // A single edit{} means a single whole-file rewrite for the batch,
+            // rather than one per key.
+            storeFor(ctx).edit { prefs ->
+                for (write in prepared) {
+                    when (val v = write.value) {
+                        is String -> prefs[stringPreferencesKey(write.name)] = v
+                        is Boolean -> prefs[booleanPreferencesKey(write.name)] = v
+                        is Long -> prefs[longPreferencesKey(write.name)] = v
+                        is Double -> prefs[doublePreferencesKey(write.name)] = v
+                        else -> throw IllegalArgumentException(
+                            "setMany: unexpected prepared type ${v.javaClass.name}"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Converts an incoming batch value to its stored form, resolving the
+     * bucket-prefixed key name. Throws [IllegalArgumentException] for types the
+     * batch path cannot represent.
+     */
+    private fun prepareWrite(key: String, value: Any): PreparedWrite = when (value) {
+        is String -> PreparedWrite(key, value)
+        is Boolean -> PreparedWrite(key, value)
+        // Pigeon narrows small ints to Int on the wire; the store uses Long.
+        is Int -> PreparedWrite(key, value.toLong())
+        is Long -> PreparedWrite(key, value)
+        is Double -> PreparedWrite(key, value)
+        is List<*> -> PreparedWrite(
+            LIST_BUCKET + key,
+            JSONArray(value.map { it as? String ?: it.toString() }).toString()
+        )
+        else -> throw IllegalArgumentException(
+            "setMany: unsupported value type for key \"$key\": ${value.javaClass.name}"
+        )
+    }
+
+    override fun removeMany(keys: List<String>, callback: (Result<Long>) -> Unit) {
+        launchOnAttached(callback) { ctx ->
+            val candidates = keys.flatMapTo(HashSet()) { bucketCandidates(it) }
+            var removed = 0L
+            storeFor(ctx).edit { prefs ->
+                val matching = prefs.asMap().keys.filter { it.name in candidates }
+                for (prefKey in matching) {
+                    @Suppress("UNCHECKED_CAST")
+                    prefs.remove(prefKey as Preferences.Key<Any>)
+                    removed++
+                }
+            }
+            removed
+        }
+    }
+
     // ---------- Query ----------
 
     override fun getAll(callback: (Result<Map<String, Any>>) -> Unit) {
@@ -452,7 +559,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
                         result[realKey] = list
                     }
                     BYTES_BUCKET -> {
-                        result[realKey] = Base64.decode(value as String, Base64.DEFAULT)
+                        result[realKey] = decodeStored(BYTES_BUCKET, value)
                     }
                     else -> {
                         result[realKey] = value
@@ -480,20 +587,40 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
 
     // ---------- Bytes (Uint8List) ----------
 
+    /**
+     * Reads a byte payload, preferring the native `ByteArray` slot and falling
+     * back to the legacy Base64 string written by versions <= 1.6.2.
+     *
+     * Base64 inflated every blob by ~33% on disk and, because the JVM holds
+     * strings as UTF-16, roughly 2.7x in memory on top of the byte array
+     * itself — the dominant cost of a large `setBytes`/`getBytes`.
+     */
+    private fun readBytes(prefs: Preferences, key: String): ByteArray? {
+        val name = BYTES_BUCKET + key
+        // Read the raw entry and branch on its runtime type. `Preferences.get`
+        // casts unchecked, so asking for a ByteArray key when a legacy Base64
+        // String is stored would hand back a String typed as ByteArray.
+        val raw = prefs.asMap().entries.firstOrNull { it.key.name == name }?.value
+        return when (raw) {
+            is ByteArray -> raw
+            is String -> Base64.decode(raw, Base64.DEFAULT)
+            else -> null
+        }
+    }
+
     override fun getBytes(key: String, callback: (Result<ByteArray?>) -> Unit) {
         launchOnAttached(callback) { ctx ->
-            val prefs = storeFor(ctx).data.first()
-            val encoded = prefs[stringPreferencesKey(BYTES_BUCKET + key)]
-            if (encoded == null) null
-            else Base64.decode(encoded, Base64.DEFAULT)
+            readBytes(storeFor(ctx).data.first(), key)
         }
     }
 
     override fun setBytes(key: String, value: ByteArray, callback: (Result<Unit>) -> Unit) {
         launchOnAttached(callback) { ctx ->
-            val encoded = Base64.encodeToString(value, Base64.DEFAULT)
             storeFor(ctx).edit { prefs ->
-                prefs[stringPreferencesKey(BYTES_BUCKET + key)] = encoded
+                // `Preferences.Key` equality is by name alone, so writing the
+                // ByteArray replaces any legacy Base64 String under the same
+                // name. Removing the String key here would delete this write.
+                prefs[byteArrayPreferencesKey(BYTES_BUCKET + key)] = value
             }
         }
     }

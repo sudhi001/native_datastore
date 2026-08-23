@@ -9,11 +9,12 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.core.MultiProcessDataStoreFactory
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.byteArrayPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.io.File
+import java.security.GeneralSecurityException
 import java.security.KeyStore
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.Cipher
@@ -74,7 +75,27 @@ internal class SecureCrypto(private val keyAlias: String) {
         return cipher.doFinal(ciphertext)
     }
 
+    // Loading the AndroidKeyStore is an IPC to the keystore daemon, and the
+    // previous code paid it on every encrypt AND decrypt — the dominant cost of
+    // a secure read. The key handle itself is immutable and thread-safe, so it
+    // is resolved once and reused. `@Volatile` + double-checked locking keeps
+    // concurrent first calls from each minting a key.
+    @Volatile
+    private var cachedKey: SecretKey? = null
+
     private fun getOrCreateKey(): SecretKey {
+        cachedKey?.let { return it }
+        return synchronized(this) {
+            cachedKey ?: loadOrCreateKey().also { cachedKey = it }
+        }
+    }
+
+    /** Drops the cached handle so the next call re-resolves it. */
+    fun invalidateKey() {
+        synchronized(this) { cachedKey = null }
+    }
+
+    private fun loadOrCreateKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
         (keyStore.getKey(keyAlias, null) as? SecretKey)?.let { return it }
 
@@ -190,19 +211,42 @@ internal class SecureDatastorePlugin(
         }
     }
 
+    /**
+     * Runs a crypto operation, dropping the cached key handle and retrying once
+     * if the KeyStore reports it unusable. The handle is cached for the process
+     * lifetime, so without this a key invalidated out from under us (device
+     * lock-setting change, restored backup) would fail every subsequent call.
+     */
+    private fun <T> withKeyRetry(operation: () -> T): T {
+        return try {
+            operation()
+        } catch (e: GeneralSecurityException) {
+            crypto.invalidateKey()
+            operation()
+        }
+    }
+
     private suspend fun writeEncrypted(prefKey: String, plaintext: ByteArray) {
-        val encrypted = crypto.encrypt(plaintext)
-        val encoded = Base64.encodeToString(encrypted, Base64.NO_WRAP)
+        val encrypted = withKeyRetry { crypto.encrypt(plaintext) }
         secureStore().edit { prefs ->
-            prefs[stringPreferencesKey(prefKey)] = encoded
+            // Ciphertext is stored as a native ByteArray rather than Base64.
+            // `Preferences.Key` equality is by name, so this also replaces any
+            // legacy Base64 String written under the same name.
+            prefs[byteArrayPreferencesKey(prefKey)] = encrypted
         }
     }
 
     private suspend fun readEncrypted(prefKey: String): ByteArray? {
         val prefs = secureStore().data.first()
-        val encoded = prefs[stringPreferencesKey(prefKey)] ?: return null
-        val encrypted = Base64.decode(encoded, Base64.NO_WRAP)
-        return crypto.decrypt(encrypted)
+        // Branch on the runtime type: `Preferences.get` casts unchecked, so a
+        // legacy Base64 String would otherwise come back typed as ByteArray.
+        val raw = prefs.asMap().entries.firstOrNull { it.key.name == prefKey }?.value
+        val encrypted = when (raw) {
+            is ByteArray -> raw
+            is String -> Base64.decode(raw, Base64.NO_WRAP)
+            else -> return null
+        }
+        return withKeyRetry { crypto.decrypt(encrypted) }
     }
 
     // ---------- String ----------

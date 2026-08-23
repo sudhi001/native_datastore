@@ -80,6 +80,26 @@ abstract class DatastoreApi {
   @async
   void setMap(String key, String value);
 
+  // ---- Batch ----
+  // One platform round trip for many keys. Reading N keys individually costs N
+  // channel hops and N full-snapshot materialisations; writing N keys
+  // individually costs N whole-file rewrites on Android. These collapse both.
+
+  /// Reads [keys] in a single call. Absent keys are omitted from the result,
+  /// so the caller can distinguish "missing" from "stored null".
+  @async
+  Map<String, Object> getMany(List<String> keys);
+
+  /// Writes every entry of [entries] in a single native transaction. Values
+  /// must be String, bool, int, double or `List<String>`.
+  @async
+  void setMany(Map<String, Object> entries);
+
+  /// Removes [keys] in a single native transaction, returning how many were
+  /// actually present.
+  @async
+  int removeMany(List<String> keys);
+
   // ---- Atomic read-modify-write ----
   // Each runs as a single native transaction (DataStore `updateData` on
   // Android, the serial queue on iOS), so concurrent callers never race on a

@@ -81,6 +81,21 @@ interface DatastoreApi {
   fun getMap(key: String, callback: (Result<String?>) -> Unit)
   fun setMap(key: String, value: String, callback: (Result<Unit>) -> Unit)
   /**
+   * Reads [keys] in a single call. Absent keys are omitted from the result,
+   * so the caller can distinguish "missing" from "stored null".
+   */
+  fun getMany(keys: List<String>, callback: (Result<Map<String, Any>>) -> Unit)
+  /**
+   * Writes every entry of [entries] in a single native transaction. Values
+   * must be String, bool, int, double or List<String>.
+   */
+  fun setMany(entries: Map<String, Any>, callback: (Result<Unit>) -> Unit)
+  /**
+   * Removes [keys] in a single native transaction, returning how many were
+   * actually present.
+   */
+  fun removeMany(keys: List<String>, callback: (Result<Long>) -> Unit)
+  /**
    * Atomically adds [delta] to the int at [key] (treating a missing value as
    * 0) and returns the new value.
    */
@@ -534,6 +549,65 @@ interface DatastoreApi {
                 reply.reply(MessagesPigeonUtils.wrapError(error))
               } else {
                 reply.reply(MessagesPigeonUtils.wrapResult(null))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.getMany$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keysArg = args[0] as List<String>
+            api.getMany(keysArg) { result: Result<Map<String, Any>> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MessagesPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.setMany$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val entriesArg = args[0] as Map<String, Any>
+            api.setMany(entriesArg) { result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                reply.reply(MessagesPigeonUtils.wrapResult(null))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.native_datastore.DatastoreApi.removeMany$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val keysArg = args[0] as List<String>
+            api.removeMany(keysArg) { result: Result<Long> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MessagesPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MessagesPigeonUtils.wrapResult(data))
               }
             }
           }

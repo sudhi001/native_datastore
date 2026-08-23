@@ -119,6 +119,15 @@ protocol DatastoreApi {
   func setDateTime(key: String, value: Int64, completion: @escaping (Result<Void, Error>) -> Void)
   func getMap(key: String, completion: @escaping (Result<String?, Error>) -> Void)
   func setMap(key: String, value: String, completion: @escaping (Result<Void, Error>) -> Void)
+  /// Reads [keys] in a single call. Absent keys are omitted from the result,
+  /// so the caller can distinguish "missing" from "stored null".
+  func getMany(keys: [String], completion: @escaping (Result<[String: Any], Error>) -> Void)
+  /// Writes every entry of [entries] in a single native transaction. Values
+  /// must be String, bool, int, double or List<String>.
+  func setMany(entries: [String: Any], completion: @escaping (Result<Void, Error>) -> Void)
+  /// Removes [keys] in a single native transaction, returning how many were
+  /// actually present.
+  func removeMany(keys: [String], completion: @escaping (Result<Int64, Error>) -> Void)
   /// Atomically adds [delta] to the int at [key] (treating a missing value as
   /// 0) and returns the new value.
   func incrementInt(key: String, delta: Int64, completion: @escaping (Result<Int64, Error>) -> Void)
@@ -511,6 +520,63 @@ class DatastoreApiSetup {
       }
     } else {
       setMapChannel.setMessageHandler(nil)
+    }
+    /// Reads [keys] in a single call. Absent keys are omitted from the result,
+    /// so the caller can distinguish "missing" from "stored null".
+    let getManyChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.getMany\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      getManyChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keysArg = args[0] as! [String]
+        api.getMany(keys: keysArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      getManyChannel.setMessageHandler(nil)
+    }
+    /// Writes every entry of [entries] in a single native transaction. Values
+    /// must be String, bool, int, double or List<String>.
+    let setManyChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.setMany\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setManyChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let entriesArg = args[0] as! [String: Any]
+        api.setMany(entries: entriesArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      setManyChannel.setMessageHandler(nil)
+    }
+    /// Removes [keys] in a single native transaction, returning how many were
+    /// actually present.
+    let removeManyChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.removeMany\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      removeManyChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let keysArg = args[0] as! [String]
+        api.removeMany(keys: keysArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      removeManyChannel.setMessageHandler(nil)
     }
     /// Atomically adds [delta] to the int at [key] (treating a missing value as
     /// 0) and returns the new value.

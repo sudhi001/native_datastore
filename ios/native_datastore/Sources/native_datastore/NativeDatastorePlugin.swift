@@ -22,6 +22,10 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     /// Serial queue for all datastore operations to prevent race conditions.
     private let serialQueue = DispatchQueue(label: "native_datastore.serial")
 
+    /// App Group container URL when `configure(appGroupId:)` repointed storage
+    /// at a shared suite, else nil. Only mutated on `serialQueue`.
+    private var appGroupContainer: URL?
+
     // Held strongly so the Pigeon handler closure isn't the only owner — gives
     // a deterministic place to nil it during teardown.
     private var secureInstance: SecureDatastorePlugin?
@@ -93,6 +97,39 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     /// Uses `[weak self]` so a teardown mid-flight short-circuits with a
     /// `plugin-detached` failure rather than keeping the instance alive
     /// for the duration of the queue backlog.
+    /// Runs [body] under a cross-process advisory lock when storage is backed
+    /// by an App Group.
+    ///
+    /// `serialQueue` only serialises callers inside *this* process. Once
+    /// `configure(appGroupId:)` points storage at a shared suite, an app
+    /// extension in a separate process can interleave its own read-modify-write
+    /// between our read and our write, silently losing an update. The atomic
+    /// operations this plugin advertises (increment, toggle, compare-and-set)
+    /// would not actually be atomic there.
+    ///
+    /// `flock` on a file in the shared container gives the missing mutual
+    /// exclusion. With no App Group configured there is no second process to
+    /// race with, so the lock is skipped entirely and single-process callers
+    /// pay nothing.
+    fileprivate func withCrossProcessLock<T>(_ body: () -> T) -> T {
+        guard let container = appGroupContainer else { return body() }
+        let lockURL = container.appendingPathComponent(".native_datastore.lock")
+        let fd = open(lockURL.path, O_RDWR | O_CREAT, 0o644)
+        guard fd != -1 else {
+            // Cannot obtain the lock file — proceed rather than fail the call;
+            // behaviour then matches the previous in-process-only guarantee.
+            return body()
+        }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX) == 0 else { return body() }
+        defer { flock(fd, LOCK_UN) }
+        // Pick up writes committed by other processes before reading.
+        defaults.synchronize()
+        let result = body()
+        defaults.synchronize()
+        return result
+    }
+
     private func onQueue<T>(
         _ completion: @escaping (Result<T, Error>) -> Void,
         body: @escaping (NativeDatastorePlugin) -> T
@@ -200,6 +237,71 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     func setStringList(key: String, value: [String], completion: @escaping (Result<Void, Error>) -> Void) {
         onQueue(completion) { plugin in
             plugin.defaults.set(value, forKey: plugin.bucketKey(Self.listBucket, key))
+        }
+    }
+
+    // MARK: - Batch
+
+    /// Reads many keys in one queue hop instead of one per key. Absent keys are
+    /// omitted so callers can tell "missing" from "stored null".
+    func getMany(keys: [String], completion: @escaping (Result<[String: Any], Error>) -> Void) {
+        onQueue(completion) { plugin in
+            var result: [String: Any] = [:]
+            for key in keys {
+                if let value = plugin.defaults.stringArray(
+                    forKey: plugin.bucketKey(Self.listBucket, key)
+                ) {
+                    result[key] = value
+                    continue
+                }
+                if let data = plugin.defaults.data(forKey: plugin.bucketKey(Self.bytesBucket, key)) {
+                    result[key] = FlutterStandardTypedData(bytes: data)
+                    continue
+                }
+                for bucket in [Self.dateTimeBucket, Self.mapBucket] {
+                    if let value = plugin.defaults.object(forKey: plugin.bucketKey(bucket, key)) {
+                        result[key] = value
+                        break
+                    }
+                }
+                if result[key] == nil,
+                   let value = plugin.defaults.object(forKey: plugin.scalarKey(key)) {
+                    result[key] = value
+                }
+            }
+            return result
+        }
+    }
+
+    /// Writes many entries in one queue hop. Values must be String, Bool, Int,
+    /// Double or [String].
+    func setMany(entries: [String: Any], completion: @escaping (Result<Void, Error>) -> Void) {
+        onQueue(completion) { plugin in
+            for (key, value) in entries {
+                if let list = value as? [String] {
+                    plugin.defaults.set(list, forKey: plugin.bucketKey(Self.listBucket, key))
+                } else {
+                    plugin.defaults.set(value, forKey: plugin.scalarKey(key))
+                }
+            }
+        }
+    }
+
+    /// Removes many keys in one queue hop, returning how many were present.
+    func removeMany(keys: [String], completion: @escaping (Result<Int64, Error>) -> Void) {
+        onQueue(completion) { plugin in
+            var removed: Int64 = 0
+            for key in keys {
+                var candidates = [plugin.scalarKey(key)]
+                candidates.append(contentsOf: Self.typedBuckets.map { plugin.bucketKey($0, key) })
+                var existed = false
+                for candidate in candidates where plugin.defaults.object(forKey: candidate) != nil {
+                    existed = true
+                    plugin.defaults.removeObject(forKey: candidate)
+                }
+                if existed { removed += 1 }
+            }
+            return removed
         }
     }
 
@@ -338,114 +440,128 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
 
     func incrementInt(key: String, delta: Int64, completion: @escaping (Result<Int64, Error>) -> Void) {
         onQueue(completion) { plugin in
-            let k = plugin.scalarKey(key)
-            var current: Int64 = 0
-            if let value = plugin.defaults.object(forKey: k),
-               !plugin.isStoredAsBool(value),
-               let number = value as? NSNumber,
-               !plugin.isFloatingPointNumber(number) {
-                current = number.int64Value
+            plugin.withCrossProcessLock {
+                let k = plugin.scalarKey(key)
+                var current: Int64 = 0
+                if let value = plugin.defaults.object(forKey: k),
+                   !plugin.isStoredAsBool(value),
+                   let number = value as? NSNumber,
+                   !plugin.isFloatingPointNumber(number) {
+                    current = number.int64Value
+                }
+                let newValue = current + delta
+                plugin.defaults.set(newValue, forKey: k)
+                return newValue
             }
-            let newValue = current + delta
-            plugin.defaults.set(newValue, forKey: k)
-            return newValue
         }
     }
 
     func incrementDouble(key: String, delta: Double, completion: @escaping (Result<Double, Error>) -> Void) {
         onQueue(completion) { plugin in
-            let k = plugin.scalarKey(key)
-            var current = 0.0
-            if let value = plugin.defaults.object(forKey: k),
-               !plugin.isStoredAsBool(value),
-               let number = value as? NSNumber {
-                current = number.doubleValue
+            plugin.withCrossProcessLock {
+                let k = plugin.scalarKey(key)
+                var current = 0.0
+                if let value = plugin.defaults.object(forKey: k),
+                   !plugin.isStoredAsBool(value),
+                   let number = value as? NSNumber {
+                    current = number.doubleValue
+                }
+                let newValue = current + delta
+                plugin.defaults.set(newValue, forKey: k)
+                return newValue
             }
-            let newValue = current + delta
-            plugin.defaults.set(newValue, forKey: k)
-            return newValue
         }
     }
 
     func toggleBool(key: String, completion: @escaping (Result<Bool, Error>) -> Void) {
         onQueue(completion) { plugin in
-            let k = plugin.scalarKey(key)
-            var current = false
-            if let value = plugin.defaults.object(forKey: k), plugin.isStoredAsBool(value) {
-                current = (value as! NSNumber).boolValue
+            plugin.withCrossProcessLock {
+                let k = plugin.scalarKey(key)
+                var current = false
+                if let value = plugin.defaults.object(forKey: k), plugin.isStoredAsBool(value) {
+                    current = (value as! NSNumber).boolValue
+                }
+                let newValue = !current
+                plugin.defaults.set(newValue, forKey: k)
+                return newValue
             }
-            let newValue = !current
-            plugin.defaults.set(newValue, forKey: k)
-            return newValue
         }
     }
 
     func compareAndSetString(key: String, expected: String?, value: String?, completion: @escaping (Result<Bool, Error>) -> Void) {
         onQueue(completion) { plugin in
-            let k = plugin.scalarKey(key)
-            guard plugin.defaults.string(forKey: k) == expected else { return false }
-            if let value = value {
-                plugin.defaults.set(value, forKey: k)
-            } else {
-                plugin.defaults.removeObject(forKey: k)
+            plugin.withCrossProcessLock {
+                let k = plugin.scalarKey(key)
+                guard plugin.defaults.string(forKey: k) == expected else { return false }
+                if let value = value {
+                    plugin.defaults.set(value, forKey: k)
+                } else {
+                    plugin.defaults.removeObject(forKey: k)
+                }
+                return true
             }
-            return true
         }
     }
 
     func compareAndSetInt(key: String, expected: Int64?, value: Int64?, completion: @escaping (Result<Bool, Error>) -> Void) {
         onQueue(completion) { plugin in
-            let k = plugin.scalarKey(key)
-            var current: Int64? = nil
-            if let v = plugin.defaults.object(forKey: k),
-               !plugin.isStoredAsBool(v),
-               let number = v as? NSNumber,
-               !plugin.isFloatingPointNumber(number) {
-                current = number.int64Value
+            plugin.withCrossProcessLock {
+                let k = plugin.scalarKey(key)
+                var current: Int64? = nil
+                if let v = plugin.defaults.object(forKey: k),
+                   !plugin.isStoredAsBool(v),
+                   let number = v as? NSNumber,
+                   !plugin.isFloatingPointNumber(number) {
+                    current = number.int64Value
+                }
+                guard current == expected else { return false }
+                if let value = value {
+                    plugin.defaults.set(value, forKey: k)
+                } else {
+                    plugin.defaults.removeObject(forKey: k)
+                }
+                return true
             }
-            guard current == expected else { return false }
-            if let value = value {
-                plugin.defaults.set(value, forKey: k)
-            } else {
-                plugin.defaults.removeObject(forKey: k)
-            }
-            return true
         }
     }
 
     func compareAndSetDouble(key: String, expected: Double?, value: Double?, completion: @escaping (Result<Bool, Error>) -> Void) {
         onQueue(completion) { plugin in
-            let k = plugin.scalarKey(key)
-            var current: Double? = nil
-            if let v = plugin.defaults.object(forKey: k),
-               !plugin.isStoredAsBool(v),
-               let number = v as? NSNumber {
-                current = number.doubleValue
+            plugin.withCrossProcessLock {
+                let k = plugin.scalarKey(key)
+                var current: Double? = nil
+                if let v = plugin.defaults.object(forKey: k),
+                   !plugin.isStoredAsBool(v),
+                   let number = v as? NSNumber {
+                    current = number.doubleValue
+                }
+                guard current == expected else { return false }
+                if let value = value {
+                    plugin.defaults.set(value, forKey: k)
+                } else {
+                    plugin.defaults.removeObject(forKey: k)
+                }
+                return true
             }
-            guard current == expected else { return false }
-            if let value = value {
-                plugin.defaults.set(value, forKey: k)
-            } else {
-                plugin.defaults.removeObject(forKey: k)
-            }
-            return true
         }
     }
 
     func compareAndSetBool(key: String, expected: Bool?, value: Bool?, completion: @escaping (Result<Bool, Error>) -> Void) {
         onQueue(completion) { plugin in
-            let k = plugin.scalarKey(key)
-            var current: Bool? = nil
-            if let v = plugin.defaults.object(forKey: k), plugin.isStoredAsBool(v) {
-                current = (v as! NSNumber).boolValue
+            plugin.withCrossProcessLock {
+                let k = plugin.scalarKey(key)
+                var current: Bool? = nil
+                if let v = plugin.defaults.object(forKey: k), plugin.isStoredAsBool(v) {
+                    current = (v as! NSNumber).boolValue
+                }
+                guard current == expected else { return false }
+                if let value = value {
+                    plugin.defaults.set(value, forKey: k)
+                } else {
+                    plugin.defaults.removeObject(forKey: k)
+                }
+                return true
             }
-            guard current == expected else { return false }
-            if let value = value {
-                plugin.defaults.set(value, forKey: k)
-            } else {
-                plugin.defaults.removeObject(forKey: k)
-            }
-            return true
         }
     }
 
@@ -499,8 +615,11 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
         onQueue(completion) { plugin in
             if let appGroupId = appGroupId, let suite = UserDefaults(suiteName: appGroupId) {
                 plugin.defaults = suite
+                plugin.appGroupContainer = FileManager.default
+                    .containerURL(forSecurityApplicationGroupIdentifier: appGroupId)
             } else {
                 plugin.defaults = UserDefaults.standard
+                plugin.appGroupContainer = nil
             }
         }
     }
@@ -514,11 +633,25 @@ class DatastoreChangesStreamHandler: NSObject, FlutterStreamHandler {
     private var sink: FlutterEventSink?
     private var snapshot: [String: Any] = [:]
 
+    /// `UserDefaults.didChangeNotification` fires for *any* write in the app,
+    /// not just this plugin's, and each one used to run a full
+    /// `dictionaryRepresentation()` snapshot and diff synchronously on the
+    /// posting thread (usually main). An app writing its own unrelated defaults
+    /// in a loop paid that cost every time.
+    ///
+    /// Notifications are now coalesced: a burst schedules exactly one diff, and
+    /// the diff runs off the main thread.
+    private let diffQueue = DispatchQueue(label: "native_datastore.changes")
+    private var diffScheduled = false
+
     init(plugin: NativeDatastorePlugin) {
         self.plugin = plugin
     }
 
     func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+        // Guard against a second onListen without an intervening onCancel,
+        // which would otherwise register a duplicate observer.
+        NotificationCenter.default.removeObserver(self)
         sink = events
         snapshot = plugin?.namespacedSnapshot() ?? [:]
         NotificationCenter.default.addObserver(
@@ -531,6 +664,19 @@ class DatastoreChangesStreamHandler: NSObject, FlutterStreamHandler {
     }
 
     @objc private func defaultsChanged() {
+        diffQueue.async { [weak self] in
+            guard let self else { return }
+            // Collapse a burst of notifications into a single diff.
+            if self.diffScheduled { return }
+            self.diffScheduled = true
+            self.diffQueue.async {
+                self.diffScheduled = false
+                self.emitChanges()
+            }
+        }
+    }
+
+    private func emitChanges() {
         guard let plugin = plugin, let sink = sink else { return }
         let current = plugin.namespacedSnapshot()
         var changed = Set<String>()
@@ -548,6 +694,7 @@ class DatastoreChangesStreamHandler: NSObject, FlutterStreamHandler {
     func onCancel(withArguments arguments: Any?) -> FlutterError? {
         NotificationCenter.default.removeObserver(self)
         sink = nil
+        diffQueue.async { [weak self] in self?.snapshot = [:] }
         return nil
     }
 }
