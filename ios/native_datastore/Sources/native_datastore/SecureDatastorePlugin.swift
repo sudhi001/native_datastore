@@ -41,7 +41,7 @@ final class KeychainStore {
     private func baseQuery(account: String? = nil) -> [String: Any] {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.service,
+            kSecAttrService as String: Self.service
         ]
         if let account { query[kSecAttrAccount as String] = account }
         if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
@@ -52,7 +52,7 @@ final class KeychainStore {
         let query = baseQuery(account: account)
         let attributes: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: Self.accessible,
+            kSecAttrAccessible as String: Self.accessible
         ]
         var status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound {
@@ -124,6 +124,26 @@ final class SecureDatastorePlugin: NSObject, SecureDatastoreApi {
     private let keychain = KeychainStore()
     private let serialQueue = DispatchQueue(label: "native_datastore.secure.serial")
 
+    /// Maps an internal failure to the stable code vocabulary where one
+    /// applies, and otherwise leaves it alone for Pigeon's default wrapping.
+    ///
+    /// Without this a Keychain failure reached Dart with its own description
+    /// string as `PlatformException.code` — a value no app could match and one
+    /// Android had no equivalent for.
+    private static func pigeonError(_ error: Error) -> Error {
+        if error is NativeDatastoreError {
+            return error
+        }
+        if let keychainError = error as? KeychainStore.KeychainError {
+            return NativeDatastoreError(
+                code: ErrorCode.keychain,
+                message: keychainError.errorDescription,
+                details: nil
+            )
+        }
+        return error
+    }
+
     private func onQueue<T>(
         _ completion: @escaping (Result<T, Error>) -> Void,
         body: @escaping (SecureDatastorePlugin) throws -> T
@@ -131,7 +151,7 @@ final class SecureDatastorePlugin: NSObject, SecureDatastoreApi {
         serialQueue.async { [weak self] in
             guard let self else {
                 completion(.failure(NativeDatastoreError(
-                    code: "plugin-detached",
+                    code: ErrorCode.detached,
                     message: "SecureDatastorePlugin is no longer attached",
                     details: nil
                 )))
@@ -140,7 +160,7 @@ final class SecureDatastorePlugin: NSObject, SecureDatastoreApi {
             do {
                 completion(.success(try body(self)))
             } catch {
-                completion(.failure(error))
+                completion(.failure(Self.pigeonError(error)))
             }
         }
     }
@@ -160,7 +180,7 @@ final class SecureDatastorePlugin: NSObject, SecureDatastoreApi {
         onQueue(completion) { plugin in
             guard let data = value.data(using: .utf8) else {
                 throw NativeDatastoreError(
-                    code: "encoding-error",
+                    code: ErrorCode.encoding,
                     message: "Failed to UTF-8 encode value",
                     details: nil
                 )
@@ -190,13 +210,12 @@ final class SecureDatastorePlugin: NSObject, SecureDatastoreApi {
 
     func remove(key: String, completion: @escaping (Result<Bool, Error>) -> Void) {
         onQueue(completion) { plugin in
-            var any = false
-            for bucket in KeychainStore.typedBuckets {
-                if try plugin.keychain.remove(account: bucket + key) {
-                    any = true
-                }
-            }
-            return any
+            // `map` then `contains`, not `contains` alone: a user key can hold
+            // both a string and a bytes entry, and `remove` has to delete both.
+            // `contains` would stop at the first bucket that had something.
+            try KeychainStore.typedBuckets
+                .map { try plugin.keychain.remove(account: $0 + key) }
+                .contains(true)
         }
     }
 
@@ -224,12 +243,9 @@ final class SecureDatastorePlugin: NSObject, SecureDatastoreApi {
 
     func containsKey(key: String, completion: @escaping (Result<Bool, Error>) -> Void) {
         onQueue(completion) { plugin in
-            for bucket in KeychainStore.typedBuckets {
-                if try plugin.keychain.contains(account: bucket + key) {
-                    return true
-                }
+            try KeychainStore.typedBuckets.contains { bucket in
+                try plugin.keychain.contains(account: bucket + key)
             }
-            return false
         }
     }
 

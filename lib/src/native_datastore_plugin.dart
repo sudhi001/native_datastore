@@ -4,30 +4,10 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'errors.dart';
 import 'messages.g.dart';
 
-/// Exception thrown when a [NativeDatastore] operation fails.
-///
-/// Wraps platform-specific errors with a human-readable [message]
-/// and the original [cause] when available.
-class NativeDatastoreException implements Exception {
-  /// Creates a [NativeDatastoreException].
-  const NativeDatastoreException(this.message, {this.cause});
-
-  /// A human-readable description of what went wrong.
-  final String message;
-
-  /// The underlying platform exception, if any.
-  final Object? cause;
-
-  @override
-  String toString() {
-    if (cause != null) {
-      return 'NativeDatastoreException: $message (cause: $cause)';
-    }
-    return 'NativeDatastoreException: $message';
-  }
-}
+export 'errors.dart' show NativeDatastoreException;
 
 /// Prefixes the native side uses internally to namespace typed storage so
 /// `setStringList`/`setBytes`/`setDateTime`/`setMap` cannot collide with the
@@ -93,33 +73,10 @@ class NativeDatastore {
   /// Throws [NativeDatastoreException] if [key] is empty, starts with a
   /// reserved prefix, or the platform call fails.
   /// {@endtemplate}
-  static void _validateKey(String key) {
-    if (key.isEmpty) {
-      throw const NativeDatastoreException('Key must not be empty');
-    }
-    for (final prefix in _BucketPrefix.all) {
-      if (key.startsWith(prefix)) {
-        throw NativeDatastoreException(
-          'Key must not start with reserved prefix "$prefix"',
-        );
-      }
-    }
-  }
+  static void _validateKey(String key) => validateKey(key, _BucketPrefix.all);
 
-  Future<T> _guard<T>(String operation, Future<T> Function() action) async {
-    try {
-      return await action();
-    } on NativeDatastoreException {
-      rethrow;
-    } on PlatformException catch (e) {
-      throw NativeDatastoreException(
-        'Failed to $operation: ${e.message ?? e.code}',
-        cause: e,
-      );
-    } catch (e) {
-      throw NativeDatastoreException('Failed to $operation: $e', cause: e);
-    }
-  }
+  Future<T> _guard<T>(String operation, Future<T> Function() action) =>
+      guard(operation, action);
 
   /// Reads a [String] value from the data store for the given [key].
   ///
@@ -275,9 +232,13 @@ class NativeDatastore {
   /// batching N writes turns N rewrites into one. The batch is atomic: either
   /// every entry lands or none does.
   ///
-  /// Values must be [String], [bool], [int], [double] or [List]<[String]>.
-  /// For [Uint8List], [DateTime] or [Map] values use the dedicated setters —
-  /// they carry type information this batch path does not.
+  /// Values must be [String], [bool], [int], [double], [Uint8List], or a
+  /// [List] whose elements are all [String].
+  ///
+  /// [DateTime] and [Map] are not accepted. Their wire forms — millis and a
+  /// JSON string — are indistinguishable from a plain [int] and [String], so
+  /// the native side could not tell which namespace to write them to. Use
+  /// [setDateTime] and [setMap], which say so explicitly.
   ///
   /// Throws [NativeDatastoreException] if a key is empty, a value has an
   /// unsupported type, or the platform call fails.
@@ -285,11 +246,29 @@ class NativeDatastore {
     for (final entry in entries.entries) {
       _validateKey(entry.key);
       final value = entry.value;
+      // Before the `is List` branch below: a Uint8List *is* a List<int>, so
+      // testing for a list first would reject every byte payload.
+      if (value is Uint8List) {
+        continue;
+      }
+      // `is! List<String>` would reject a List<dynamic> that happens to hold
+      // only strings — the shape `jsonDecode` hands back, and the shape
+      // `getAll` returns for a string list on some platforms.
+      if (value is List) {
+        for (final Object? element in value) {
+          if (element is! String) {
+            throw NativeDatastoreException(
+              'setMany: list values for key "${entry.key}" must all be String, '
+              'found ${element.runtimeType}.',
+            );
+          }
+        }
+        continue;
+      }
       if (value is! String &&
           value is! bool &&
           value is! int &&
-          value is! double &&
-          value is! List<String>) {
+          value is! double) {
         throw NativeDatastoreException(
           'setMany: unsupported value type for key "${entry.key}": '
           '${value.runtimeType}. Use the typed setter instead.',

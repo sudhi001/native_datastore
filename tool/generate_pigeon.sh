@@ -28,7 +28,10 @@ dart run pigeon --input pigeons/messages.dart
 
 echo "Escaping reserved Kotlin keyword 'in' in generated package declaration..."
 # Only the exact unescaped package line is rewritten; a no-op if already escaped.
-sed -i '' 's|^package in\.sudhi\.native_datastore$|package `in`.sudhi.native_datastore|' "$KOTLIN_OUT"
+# perl rather than `sed -i`, whose in-place flag takes an argument on BSD/macOS
+# and takes none on GNU/Linux — the BSD spelling silently broke this script on
+# the CI runners, which is where the drift check has to run.
+perl -0pi -e 's|^package in\.sudhi\.native_datastore$|package `in`.sudhi.native_datastore|m' "$KOTLIN_OUT"
 
 # Verify the fix took (guards against pigeon changing the output path/format).
 if grep -q '^package in\.sudhi\.native_datastore$' "$KOTLIN_OUT"; then

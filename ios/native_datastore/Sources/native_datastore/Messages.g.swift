@@ -123,7 +123,9 @@ protocol DatastoreApi {
   /// so the caller can distinguish "missing" from "stored null".
   func getMany(keys: [String], completion: @escaping (Result<[String: Any], Error>) -> Void)
   /// Writes every entry of [entries] in a single native transaction. Values
-  /// must be String, bool, int, double or List<String>.
+  /// must be String, bool, int, double, Uint8List, or a List whose elements are
+  /// all String. DateTime and Map are excluded: their wire forms are an int and
+  /// a String, so the host cannot tell which namespace to write them to.
   func setMany(entries: [String: Any], completion: @escaping (Result<Void, Error>) -> Void)
   /// Removes [keys] in a single native transaction, returning how many were
   /// actually present.
@@ -541,7 +543,9 @@ class DatastoreApiSetup {
       getManyChannel.setMessageHandler(nil)
     }
     /// Writes every entry of [entries] in a single native transaction. Values
-    /// must be String, bool, int, double or List<String>.
+    /// must be String, bool, int, double, Uint8List, or a List whose elements are
+    /// all String. DateTime and Map are excluded: their wire forms are an int and
+    /// a String, so the host cannot tell which namespace to write them to.
     let setManyChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.native_datastore.DatastoreApi.setMany\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
       setManyChannel.setMessageHandler { message, reply in

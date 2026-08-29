@@ -91,7 +91,9 @@ abstract class DatastoreApi {
   Map<String, Object> getMany(List<String> keys);
 
   /// Writes every entry of [entries] in a single native transaction. Values
-  /// must be String, bool, int, double or `List<String>`.
+  /// must be String, bool, int, double, Uint8List, or a List whose elements are
+  /// all String. DateTime and Map are excluded: their wire forms are an int and
+  /// a String, so the host cannot tell which namespace to write them to.
   @async
   void setMany(Map<String, Object> entries);
 

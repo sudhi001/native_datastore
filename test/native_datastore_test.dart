@@ -112,6 +112,39 @@ void main() {
       expect(e.toString(), contains('test error'));
       expect(e.toString(), contains('root'));
       expect(e.cause, cause);
+      expect(e.code, isNull);
+    });
+
+    test('carries the platform code so callers can branch on it', () async {
+      MockDatastoreChannel.mockMethodError(
+        'getString',
+        code: NativeDatastoreException.secureKeyUnavailableCode,
+        errorMessage: 'the key is gone',
+      );
+      final e = await _expectException(() => datastore.getString('k'));
+      expect(e.code, NativeDatastoreException.secureKeyUnavailableCode);
+      expect(e.toString(), contains('[secure-key-unavailable]'));
+    });
+
+    test('leaves code null for a failure raised in Dart', () {
+      expect(
+        () => datastore.getString(''),
+        throwsA(
+          isA<NativeDatastoreException>().having((e) => e.code, 'code', isNull),
+        ),
+      );
+    });
+
+    test('preserves the stack trace of the failing platform call', () async {
+      MockDatastoreChannel.mockMethodError('getInt', errorMessage: 'boom');
+      try {
+        await datastore.getInt('k');
+        fail('expected a NativeDatastoreException');
+      } on NativeDatastoreException catch (_, stackTrace) {
+        // Rethrowing plainly replaced the platform call's stack with the
+        // _guard frame, which said nothing about which call site failed.
+        expect(stackTrace.toString(), contains('native_datastore'));
+      }
     });
   });
 
@@ -1033,14 +1066,43 @@ void main() {
     });
 
     test('setMany rejects unsupported value types', () async {
+      // DateTime and Map stay out: their wire forms are an int and a String,
+      // so the native side could not tell them from a plain scalar.
       final e = await _expectException(
         () => datastore.setMany(<String, Object>{
           'ok': 'fine',
-          'bad': Uint8List.fromList(<int>[1, 2]),
+          'bad': DateTime.utc(2020),
         }),
       );
       expect(e.message, contains('unsupported value type'));
       expect(e.message, contains('bad'));
+    });
+
+    test('setMany accepts byte payloads', () async {
+      MockDatastoreChannel.mockMethod('setMany', null);
+      await datastore.setMany(<String, Object>{
+        'blob': Uint8List.fromList(<int>[1, 2, 3]),
+      });
+    });
+
+    test('setMany accepts a List<dynamic> holding only strings', () async {
+      // This is the shape jsonDecode hands back; a `is! List<String>` check
+      // rejected it even though every element was a String.
+      MockDatastoreChannel.mockMethod('setMany', null);
+      await datastore.setMany(<String, Object>{
+        'tags': <dynamic>['a', 'b'],
+      });
+    });
+
+    test('setMany rejects a list with a non-string element', () async {
+      final e = await _expectException(
+        () => datastore.setMany(<String, Object>{
+          'tags': <dynamic>['a', 7],
+        }),
+      );
+      expect(e.message, contains('must all be String'));
+      expect(e.message, contains('tags'));
+      expect(e.message, contains('int'));
     });
 
     test('setMany validates keys', () async {

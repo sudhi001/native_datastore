@@ -1,3 +1,207 @@
+## 1.8.0
+
+Correctness and verification release, from an Android-architecture review of the
+whole plugin. Three of these were reachable from ordinary use and none of them
+could have been caught by the test suite, because **no workflow compiled the
+Kotlin or Swift at all** — CI ran a 100% line-coverage gate over Dart whose every
+platform call is stubbed at the `BinaryMessenger` boundary, and stopped there.
+That is fixed too, and it is the change the rest depend on.
+
+### Fixed — data loss
+
+* **The encrypted store no longer travels in Android Auto Backup or
+  device-to-device transfer.** It lived in `filesDir/datastore`, which both
+  mechanisms copy by default. The AndroidKeyStore key that decrypts it does not
+  travel and cannot, so a restored install held ciphertext it had no key for —
+  and because the retry path minted a fresh key when the alias was missing,
+  **every secure read then failed for the life of that install**, with an opaque
+  `AEADBadTagException` and no way back.
+  * The store now lives under `noBackupFilesDir`, which is excluded from both by
+    design. Existing files are moved there on first access; nothing is lost.
+  * The README said secrets are "not in backups". That was true of the key and
+    not of the ciphertext.
+* **A store whose key is gone now heals instead of failing forever.** A
+  key-fingerprint entry is written alongside the data; if the current key cannot
+  read it, the unreadable contents are cleared and the store is re-stamped. On
+  upgrade, a store with no fingerprint yet is checked by decrypting one existing
+  entry, so installs already broken by a restore recover on first launch.
+  Callers see absent keys and can re-authenticate.
+* **`KeyPermanentlyInvalidatedException` and `AEADBadTagException` are no longer
+  retried.** Both are `GeneralSecurityException`, so the single blanket retry
+  ran them a second time, failed identically, and buried the real cause. Each
+  now surfaces as `SecureKeyUnavailableException` with a message that says what
+  to do; only a stale cached key handle — the one case a retry can fix — is
+  retried.
+
+### Fixed — crashes
+
+* **Reading a key back at the wrong type returns `null` instead of throwing.**
+  All four scalars share one flat key space, and `Preferences.get` casts
+  unchecked — so `setDouble('k', 1.5)` followed by `getInt('k')` handed a
+  `Double` back typed as `Long` and failed at the Pigeon boundary. iOS already
+  returned `nil` here. Every getter, `increment*`, `toggleBool` and
+  `compareAndSet*` now branch on the runtime type. `getDouble` widens a stored
+  int, matching iOS.
+* **A second `FlutterEngine` no longer crashes multi-process mode.** The
+  multi-process store was cached per plugin instance, but DataStore rejects a
+  second instance over the same file — so add-to-app, `FlutterEngineGroup` and
+  background isolates hit
+  `IllegalStateException: There are multiple DataStores active for the same file`.
+  Both multi-process stores are now process-wide, matching the single-process
+  ones, which were always property delegates.
+
+### Fixed — behaviour
+
+* **`configure()` applies before it returns.** It set the flag that selects the
+  backing store inside a coroutine, so calls already in flight could land on the
+  store the caller was switching away from.
+* **`watch*` survives a `configure()` that switches stores.** The change stream
+  resolved its store once, when collection began, so switching to multi-process
+  mode afterwards left every watcher open and permanently silent.
+* **Byte-valued keys no longer report a change on every write.** The change diff
+  compared `ByteArray` with `!=`, which is referential in Kotlin, and the
+  multi-process store re-parses its JSON on every emission. iOS compared `NSData`
+  by content; Android now does too.
+* **`containsKey`, `getBytes` and the secure `remove`/`containsKey` stopped
+  scanning.** They walked every key in the store; they now use the same O(1)
+  name probe `remove` already used.
+
+### Security
+
+* **Encrypted values are bound to the key they are stored under.** AES-GCM
+  proved a blob was written by this key, not *where* — so anyone able to write
+  the store file could move the blob under `__str__:role_user` to
+  `__str__:role_admin`, or restore an old value under its own name, and the tag
+  still verified. The entry name is now passed as GCM additional authenticated
+  data, behind a format version byte so pre-1.8.0 blobs stay readable.
+* **The key is requested StrongBox-backed** on devices that have a secure
+  element, falling back to the TEE where they do not.
+
+### API
+
+* **`NativeDatastoreException` now carries a `code`.** Both hosts report the
+  same vocabulary — `plugin-detached`, `secure-key-unavailable`,
+  `unsupported-platform-version`, `unsupported-type`, `keychain-error`,
+  `encoding-error` — so a `switch` behaves the same on Android and iOS.
+  Previously Pigeon's fallback wrapper used the Java class name on Android and
+  the Swift error's description string on iOS, so there was nothing portable to
+  match on and the only signal was an English message.
+* **Failures keep the stack trace of the call that failed.** `_guard` rethrew
+  plainly, which replaced it with its own frame.
+* **`setMany` accepts `Uint8List`**, so a `getMany` result carrying bytes can be
+  handed straight back. It also accepts a `List<dynamic>` whose elements are all
+  strings — the shape `jsonDecode` returns, which the old `is! List<String>`
+  check rejected — and now **rejects** a list with a non-string element instead
+  of silently calling `toString()` on it.
+  * `DateTime` and `Map` are still not accepted, and now say why: their wire
+    forms are an `int` and a `String`, indistinguishable from a plain scalar, so
+    the native side cannot tell which namespace to write them to.
+* **`getAll` and `getMany` resolve a key held in several namespaces
+  deterministically.** Android iterated the snapshot and let the last entry win,
+  which made the answer depend on hash order — and differ from iOS, which has
+  always used a fixed priority. Both now prefer typed namespaces over the scalar
+  slot.
+* The duplicated `_guard` and key-validation logic — a verbatim copy in each of
+  the two facades — now lives once in `lib/src/errors.dart`.
+
+### iOS
+
+The integration suite had never been run on iOS by anything — CI did not execute
+it, and it is the only test that touches real `UserDefaults` and Keychain code.
+Running it found two defects. Adding a Swift linter found a third set.
+
+* **`setMany` with a byte payload crashed the app.** It passed each value
+  straight to `defaults.set`, which raises an Objective-C exception for anything
+  that is not a property-list type — and `Uint8List` arrives as
+  `FlutterStandardTypedData`. It now converts every entry before writing any of
+  them, so bytes land in their namespace and an unrepresentable value fails the
+  call with `unsupported-type` instead of terminating the process. That also
+  gives iOS the all-or-nothing guarantee Android's single `edit {}` already had.
+* **The non-secure iOS API had no failure path at all.** `onQueue` took a
+  non-throwing body, so every operation reported `.success` no matter what.
+* **`getString` returned a number's string value.** `defaults.string(forKey:)`
+  converts an `NSNumber`, so `setDouble('k', 1.5)` then `getString('k')` handed
+  back `"1.5"`. That contradicted `getInt` and `getBool` on the same platform,
+  which already rejected a cross-type read, and Android, which returns `null`.
+  It is now a miss, not a conversion.
+
+Adding a Swift linter to CI surfaced 18 further error-level violations in code
+that had never been linted. These are the substantive ones.
+
+* **Three force casts removed from the Boolean read path.** `getBool`,
+  `toggleBool` and `compareAndSetBool` each checked `isStoredAsBool(value)` and
+  then force-cast to `NSNumber` a line or two later. Safe as written, and one
+  edit away from crashing the host app. The type test and the extraction now
+  live together in `storedBool(forKey:)`, with `storedInt` and `storedDouble`
+  alongside it — which also collapses the same five-line type dance that was
+  repeated across six call sites.
+* **The change-stream observer is removed by token.** `removeObserver(self)`
+  drops *every* notification registration the object holds; the handler only
+  ever meant to undo its own. It now keeps the registration token from
+  `addObserver(forName:object:queue:)` and removes exactly that.
+* **`SecureDatastore.remove` no longer depends on a lucky evaluation order.** It
+  now maps over both buckets before testing the result, so a key that holds both
+  a string and a bytes entry has both deleted — a short-circuiting form would
+  have stopped at the first.
+* **Corrected a comment that contradicted the public docs.** The change-stream
+  handler claimed watchers are "deliberately not coalesced" and see every write.
+  Foundation coalesces `didChangeNotification` per runloop turn regardless, which
+  is what the Dart doc has always said. The Dart doc was right.
+
+### CI now compiles and tests the native code
+
+Every gate moved into one reusable `checks.yml`, so `pr.yml` and `release.yml`
+can no longer drift — they carried byte-for-byte copies of the same four steps.
+
+* **Kotlin and Swift are compiled** (`flutter build apk` / `flutter build ios`).
+  Before this, a Kotlin syntax error or an AGP incompatibility could publish to
+  pub.dev undetected.
+* **21 Kotlin unit tests**, the first native tests in the repo, over the
+  multi-process JSON serializer, the change-diff helpers, the secure-store
+  relocation, the store registries and the blob framing. `android/src/test/` did
+  not exist.
+* **ktlint and SwiftLint** — there was no Kotlin or Swift lint of any kind.
+  Both are version-pinned, and SwiftLint runs `--strict`, so a warning fails the
+  build rather than scrolling past.
+* **`example/integration_test` runs on an emulator.** It is the only thing that
+  exercises real DataStore, AndroidKeyStore and change-stream code, and nothing
+  ran it.
+* **A Pigeon drift check.** It found real drift on its first run: the checked-in
+  `Messages.g.*` predated a doc edit in `pigeons/messages.dart`.
+* **A version-string gate.** `pubspec.yaml`, `android/build.gradle.kts` and
+  `ios/native_datastore.podspec` had drifted to 1.7.1, 1.6.2 and 1.5.3 because
+  nothing read the latter two. `release.sh` now rewrites them and the gate proves
+  it.
+* `tool/generate_pigeon.sh` used the BSD spelling of `sed -i`, which fails on the
+  Linux runners the drift check has to run on.
+
+### Known gaps
+
+These were found in the same review and are not fixed here:
+
+* **No synchronous or prefetched read.** A value needed before the first frame —
+  theme, locale, an onboarding flag — still costs a platform round trip.
+  `shared_preferences` covers this with `SharedPreferencesWithCache`.
+* **`SecureDatastore` has no `watch*`, batch or atomic operations**, and
+  `configure(multiProcess: true)` still orphans existing secrets into a separate
+  file with no migration.
+* **Corruption still empties a store silently**, with no signal to the app and no
+  way to opt out of the replace-on-corruption policy.
+* **One store per app.** The filename is fixed, so a modular app cannot scope
+  storage per feature, and there is no injection seam for tests.
+* **No Direct Boot support.** Nothing is readable before first unlock, which
+  rules out boot-completed receivers and pre-unlock notifications.
+* **`DataMigration` is not exposed** and there is no `EncryptedSharedPreferences`
+  importer, so `shared_preferences` is the only supported migration source.
+  `migrateFromSharedPreferences` also skips that plugin's tagged `List<String>`
+  and `BigInteger` values without reporting what it dropped.
+* **Android and iOS only.** A shared codebase running on web or desktop gets
+  `MissingPluginException`; there is no in-memory fallback, and no platform
+  interface for a third party to add one.
+* **iOS takes its cross-process lock only for the atomic operations.** Under an
+  App Group, `setMany`, `removeMany`, `remove`, `clear` and the plain
+  getters/setters can still interleave with an extension.
+
 ## 1.7.1
 
 Documentation and tooling only — no shipped code changed, and no behaviour

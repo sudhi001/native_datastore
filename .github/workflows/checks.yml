@@ -1,0 +1,175 @@
+name: Checks
+
+# The single definition of "is this repo healthy". Called by pr.yml and
+# release.yml so the two can never drift apart — they used to carry
+# byte-for-byte copies of the same four steps.
+#
+# Until this existed, CI ran the Dart unit suite (whose every platform call is
+# stubbed at the BinaryMessenger boundary) and nothing else: the Kotlin and
+# Swift that do the actual work were never compiled, linted, or tested, and a
+# broken native build could be published to pub.dev unnoticed.
+on:
+  workflow_call:
+
+env:
+  # Pinned, both of them: an unpinned linter turns somebody else's release into
+  # a red build on an unrelated PR.
+  KTLINT_VERSION: '1.7.1'
+  SWIFTLINT_VERSION: '0.65.1'
+
+jobs:
+  dart:
+    name: Dart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Static analysis
+        run: flutter analyze
+
+      - name: Unit tests
+        run: flutter test --coverage
+
+      - name: Coverage gate
+        run: ./tool/check_coverage.sh
+
+      # A stale Messages.g.* passes every other gate in this file: the checked-in
+      # copy compiles fine, it just no longer matches pigeons/messages.dart.
+      - name: Pigeon bindings are up to date
+        run: |
+          ./tool/generate_pigeon.sh
+          git diff --exit-code -- lib/src/messages.g.dart \
+            android/src/main/kotlin/in/sudhi/native_datastore/Messages.g.kt \
+            ios/native_datastore/Sources/native_datastore/Messages.g.swift
+
+      # pubspec.yaml, the Gradle module and the podspec drifted to three
+      # different versions (1.7.1 / 1.6.2 / 1.5.3) because nothing read them.
+      - name: Native version strings match pubspec
+        run: ./tool/check_versions.sh
+
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install ktlint
+        run: |
+          curl -sSLo /usr/local/bin/ktlint \
+            "https://github.com/pinterest/ktlint/releases/download/${KTLINT_VERSION}/ktlint"
+          chmod +x /usr/local/bin/ktlint
+
+      - name: Kotlin lint
+        run: |
+          ktlint "android/src/**/*.kt" \
+            "!android/src/main/kotlin/in/sudhi/native_datastore/Messages.g.kt"
+
+      # Compiles the plugin's Kotlin — which no workflow did before.
+      - name: Build example APK
+        working-directory: example
+        run: flutter build apk --debug
+
+      - name: Kotlin unit tests
+        working-directory: example/android
+        run: ./gradlew :native_datastore:testDebugUnitTest
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kotlin-test-report
+          path: example/build/native_datastore/reports/tests/
+
+  ios:
+    name: iOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install SwiftLint
+        run: |
+          curl -sSLo swiftlint.zip \
+            "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/portable_swiftlint.zip"
+          unzip -oq swiftlint.zip -d "$RUNNER_TEMP/swiftlint"
+          chmod +x "$RUNNER_TEMP/swiftlint/swiftlint"
+          echo "$RUNNER_TEMP/swiftlint" >> "$GITHUB_PATH"
+
+      - name: Swift lint
+        run: swiftlint lint --strict --reporter github-actions-logging
+
+      # Compiles the plugin's Swift — which no workflow did before.
+      - name: Build example app
+        working-directory: example
+        run: flutter build ios --debug --no-codesign
+
+      # The integration suite is the only thing that touches real UserDefaults
+      # and Keychain code. Running it on iOS for the first time found a crash in
+      # setMany and a cross-type read that disagreed with Android.
+      - name: Run integration tests
+        working-directory: example
+        run: |
+          xcrun simctl boot "iPhone 17" || true
+          flutter test integration_test -d "iPhone 17"
+
+  integration:
+    name: Integration (emulator)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # example/integration_test is the only thing that exercises the real
+      # DataStore, AndroidKeyStore and change-stream code paths. It existed
+      # before this job and was never run by anything.
+      - name: Run integration tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: cd example && flutter test integration_test

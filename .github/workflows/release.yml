@@ -16,33 +16,11 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Every gate lives in checks.yml so this workflow and pr.yml cannot drift
+  # apart. They used to carry byte-for-byte copies of the same four steps.
   test:
     name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - run: flutter --version
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Formatting
-        run: dart format --output=none --set-exit-if-changed .
-
-      - name: Static analysis
-        run: flutter analyze
-
-      - name: Unit tests
-        run: flutter test --coverage
-
-      - name: Coverage gate
-        run: ./tool/check_coverage.sh
+    uses: ./.github/workflows/checks.yml
 
   publish:
     name: Publish and release

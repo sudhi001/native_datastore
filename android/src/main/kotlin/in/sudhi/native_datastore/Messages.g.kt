@@ -87,7 +87,9 @@ interface DatastoreApi {
   fun getMany(keys: List<String>, callback: (Result<Map<String, Any>>) -> Unit)
   /**
    * Writes every entry of [entries] in a single native transaction. Values
-   * must be String, bool, int, double or List<String>.
+   * must be String, bool, int, double, Uint8List, or a List whose elements are
+   * all String. DateTime and Map are excluded: their wire forms are an int and
+   * a String, so the host cannot tell which namespace to write them to.
    */
   fun setMany(entries: Map<String, Any>, callback: (Result<Unit>) -> Unit)
   /**

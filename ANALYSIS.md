@@ -1,5 +1,22 @@
 # Code-Quality Audit — native_datastore
 
+> **Superseded — read this first.** This audit describes the tree as it stood at
+> 1.2.0 and has not been re-run since. It cites `ios/Classes/…`, a path that no
+> longer exists (the Swift sources moved to
+> `ios/native_datastore/Sources/native_datastore/`), and its "Security: no
+> findings" verdict predates `SecureDatastore` entirely — no encryption,
+> Keychain or AndroidKeyStore code existed when it was written, so nothing in
+> that section reflects the code that handles secrets today.
+>
+> Most of its High findings are fixed: the iOS `detachFromEngine` counterpart,
+> the Android cancellation guard, the `onQueue` helper, the payload size caps,
+> `clear()` returning `void`, and the unified Pigeon error class name. Still
+> open are the duplicated bucket-prefix table (now in four places, not three)
+> and the heterogeneous `getAll` return type.
+>
+> For the current picture, see the 1.8.0 entry in `CHANGELOG.md`, which lists
+> both what a full Android-architecture review fixed and what it left open.
+
 _Generated: 2026-05-17 · Languages: Dart, Swift, Kotlin · Files scanned: 16 hand-written sources (8 Dart, 5 Swift, 3 Kotlin); ~3,816 total LOC including pigeon-generated stubs_
 
 ## Executive Summary

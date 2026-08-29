@@ -381,4 +381,127 @@ void main() {
 
     await datastore.clear();
   });
+
+  // Scalars share one flat key space on both platforms, so a key holds whichever
+  // of them was written last. Reading it as another type used to throw on
+  // Android while returning nil on iOS; both now report absence.
+  testWidgets('cross-type reads report absence, not an error', (
+    WidgetTester tester,
+  ) async {
+    final datastore = NativeDatastore();
+    await datastore.clear();
+
+    await datastore.setDouble('scalar', 1.5);
+    expect(await datastore.getDouble('scalar'), 1.5);
+    expect(await datastore.getInt('scalar'), isNull);
+    expect(await datastore.getBool('scalar'), isNull);
+    expect(await datastore.getString('scalar'), isNull);
+
+    await datastore.setString('scalar', 'text');
+    expect(await datastore.getString('scalar'), 'text');
+    expect(await datastore.getInt('scalar'), isNull);
+    expect(await datastore.getDouble('scalar'), isNull);
+    expect(await datastore.getBool('scalar'), isNull);
+
+    await datastore.setBool('scalar', true);
+    expect(await datastore.getBool('scalar'), true);
+    expect(await datastore.getInt('scalar'), isNull);
+
+    // getDouble widens a stored int — the one deliberate coercion, kept
+    // because iOS has always behaved this way.
+    await datastore.setInt('widened', 5);
+    expect(await datastore.getInt('widened'), 5);
+    expect(await datastore.getDouble('widened'), 5.0);
+
+    // The typed containers each have their own namespace, so they neither
+    // collide with a scalar nor with each other.
+    await datastore.setString('shared', 'scalar-value');
+    await datastore.setStringList('shared', <String>['a', 'b']);
+    await datastore.setDateTime('shared', DateTime.utc(2020, 1, 2));
+    expect(await datastore.getString('shared'), 'scalar-value');
+    expect(await datastore.getStringList('shared'), <String>['a', 'b']);
+    expect(await datastore.getDateTime('shared'), DateTime.utc(2020, 1, 2));
+
+    await datastore.clear();
+  });
+
+  // A wrong-typed value must not blow up inside the native transaction these
+  // run in, which is where the unchecked cast used to land.
+  testWidgets('atomic operations tolerate a wrong-typed value', (
+    WidgetTester tester,
+  ) async {
+    final datastore = NativeDatastore();
+    await datastore.clear();
+
+    // increment/toggle treat a mismatch as absent and overwrite it.
+    await datastore.setString('counter', 'not-a-number');
+    expect(await datastore.incrementInt('counter', 3), 3);
+    expect(await datastore.getInt('counter'), 3);
+
+    await datastore.setString('flag', 'not-a-bool');
+    expect(await datastore.toggleBool('flag'), true);
+
+    await datastore.setString('ratio', 'not-a-double');
+    expect(await datastore.incrementDouble('ratio', 0.5), 0.5);
+
+    // compare-and-set simply fails to match a wrong-typed value.
+    await datastore.setString('cas', 'a-string');
+    expect(
+      await datastore.compareAndSetInt('cas', expected: 1, value: 2),
+      false,
+    );
+    expect(await datastore.getString('cas'), 'a-string');
+
+    await datastore.clear();
+  });
+
+  // Byte payloads must survive a getMany -> setMany round trip; setMany used to
+  // reject them outright while getMany decoded them.
+  testWidgets('batch writes and reads byte payloads', (
+    WidgetTester tester,
+  ) async {
+    final datastore = NativeDatastore();
+    await datastore.clear();
+
+    final blob = Uint8List.fromList(
+      List<int>.generate(64, (int i) => i * 3 % 256),
+    );
+    await datastore.setMany(<String, Object>{
+      'name': 'sudhi',
+      'blob': blob,
+      'tags': <dynamic>['a', 'b'],
+    });
+
+    final read = await datastore.getMany(<String>['name', 'blob', 'tags']);
+    expect(read['name'], 'sudhi');
+    expect(read['blob'], blob);
+    expect(read['tags'], <String>['a', 'b']);
+
+    // Hand the result straight back — the round trip must be lossless.
+    await datastore.setMany(read);
+    expect(await datastore.getBytes('blob'), blob);
+    expect(await datastore.getStringList('tags'), <String>['a', 'b']);
+
+    await datastore.clear();
+  });
+
+  // A key held in both a typed namespace and the scalar slot resolved by hash
+  // order on Android, so getAll could answer differently between runs and
+  // differently from iOS.
+  testWidgets('getAll resolves a doubly-stored key the same way every time', (
+    WidgetTester tester,
+  ) async {
+    final datastore = NativeDatastore();
+    await datastore.clear();
+
+    await datastore.setString('dual', 'scalar');
+    await datastore.setStringList('dual', <String>['typed']);
+
+    final first = await datastore.getAll();
+    final second = await datastore.getAll();
+    expect(first['dual'], second['dual']);
+    expect(first['dual'], <String>['typed']);
+
+    await datastore.clear();
+  });
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 
+import 'errors.dart';
 import 'messages.g.dart';
 import 'native_datastore_plugin.dart';
 
@@ -50,33 +50,10 @@ class SecureDatastore {
 
   final SecureDatastoreApi _api;
 
-  static void _validateKey(String key) {
-    if (key.isEmpty) {
-      throw const NativeDatastoreException('Key must not be empty');
-    }
-    for (final prefix in _SecureBucket.all) {
-      if (key.startsWith(prefix)) {
-        throw NativeDatastoreException(
-          'Key must not start with reserved prefix "$prefix"',
-        );
-      }
-    }
-  }
+  static void _validateKey(String key) => validateKey(key, _SecureBucket.all);
 
-  Future<T> _guard<T>(String operation, Future<T> Function() action) async {
-    try {
-      return await action();
-    } on NativeDatastoreException {
-      rethrow;
-    } on PlatformException catch (e) {
-      throw NativeDatastoreException(
-        'Failed to $operation: ${e.message ?? e.code}',
-        cause: e,
-      );
-    } catch (e) {
-      throw NativeDatastoreException('Failed to $operation: $e', cause: e);
-    }
-  }
+  Future<T> _guard<T>(String operation, Future<T> Function() action) =>
+      guard(operation, action);
 
   /// Reads a [String] value previously written with [setString].
   ///

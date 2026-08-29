@@ -351,6 +351,44 @@ try {
 await datastore.getString('');  // Throws NativeDatastoreException: Key must not be empty
 ```
 
+### Telling failures apart
+
+Every failure arrives as a `NativeDatastoreException`. Its `code` is the same on
+both platforms, so you can branch on it rather than on the message:
+
+```dart
+try {
+  final token = await SecureDatastore().getString('refresh_token');
+  // ...
+} on NativeDatastoreException catch (e) {
+  switch (e.code) {
+    case NativeDatastoreException.secureKeyUnavailableCode:
+      // The key that encrypted this device's secrets is gone — restored from
+      // another device, or invalidated by the system. The store clears itself
+      // on the next launch; send the user back through sign-in.
+      await signInAgain();
+    case NativeDatastoreException.unsupportedPlatformVersionCode:
+      // SecureDatastore needs Android 6.0 (API 23).
+      useUnencryptedFallback();
+    default:
+      rethrow;
+  }
+}
+```
+
+| Code | Meaning |
+|------|---------|
+| `plugin-detached` | The plugin is not attached to a Flutter engine. Retry once it is running. |
+| `secure-key-unavailable` | The key that encrypted the stored secrets can no longer read them. Treat the secrets as lost. |
+| `unsupported-platform-version` | The operation needs a newer OS than the device runs. |
+| `unsupported-type` | A value was passed that the store cannot represent. |
+| `keychain-error` | An iOS Keychain call failed; the message carries the `OSStatus`. |
+| `encoding-error` | A string could not be encoded as UTF-8. |
+
+`code` is `null` when the failure was raised in Dart — an empty key, a reserved
+prefix, an oversized payload. Anything not in the table came straight from the
+platform and is not part of the plugin's contract; match on it only for logging.
+
 ---
 
 ## Handling Null Values
@@ -374,6 +412,29 @@ if (await datastore.containsKey('profile')) {
   // Use profile...
 }
 ```
+
+### Reading a key back at the wrong type
+
+`String`, `bool`, `int` and `double` share one key space, so a key holds
+whichever of them was written last. Reading it as a different type gives `null`,
+the same as an absent key — it does not throw:
+
+```dart
+await datastore.setDouble('threshold', 1.5);
+await datastore.getInt('threshold');    // null, not 1
+await datastore.getDouble('threshold'); // 1.5
+```
+
+`getDouble` is the one exception: it widens a stored `int`, so `setInt('n', 5)`
+followed by `getDouble('n')` gives `5.0`. `increment*` and `toggleBool` treat a
+wrong-typed value as absent and overwrite it; `compareAndSet*` simply fails to
+match and returns `false`.
+
+The typed containers — `List<String>`, `Uint8List`, `DateTime` and `Map` — each
+live in their own namespace, so they never collide with a scalar or with each
+other.
+
+> Before 1.8.0 a cross-type read on Android threw instead of returning `null`.
 
 ---
 
@@ -572,15 +633,29 @@ await SecureDatastore().configure(
 - ✅ **At-rest confidentiality.** Values are encrypted with a
   hardware-backed key (Android) or held in the system Keychain (iOS), so a
   filesystem/backup dump does not reveal them.
-- ✅ **Not in backups / not device-migrated.** iOS uses
-  `…ThisDeviceOnly`; the Android key lives in the AndroidKeyStore and never
-  leaves the device.
+- ✅ **Not in backups / not device-migrated.** iOS uses `…ThisDeviceOnly`. On
+  Android the key lives in the AndroidKeyStore and never leaves the device, and
+  since 1.8.0 the encrypted file lives in `noBackupFilesDir` so the *ciphertext*
+  does not travel either. Before 1.8.0 it sat in `filesDir`, which Auto Backup
+  and device-to-device transfer copy — a restored install then held ciphertext
+  it had no key for.
+- ✅ **Each value is bound to its key.** The entry name is authenticated
+  alongside the ciphertext (GCM additional authenticated data), so an attacker
+  with write access to the store file cannot move one secret's blob under
+  another secret's name, or restore an older value, without the read failing.
+- ℹ️ **If the key goes away, the secrets go with it.** Restoring onto a new
+  device, or a system key invalidation, leaves data no key can read. The plugin
+  detects this on the next launch, clears the unreadable store, and continues —
+  so calls return `null` rather than failing forever. Treat that as "the user
+  must sign in again", and keep anything you cannot re-derive somewhere else.
 - ⚠️ **Not a substitute for auth.** While the app is unlocked and running, it
   can read its own secrets — as it must. This guards data at rest, not a
   compromised or rooted/jailbroken runtime.
 - ⚠️ **No biometric gate by default.** Access is not tied to a fresh Face ID /
   fingerprint check. If you need per-read user presence, gate the call in your
   app.
+- ℹ️ **Hardware backing is best-effort.** Android asks for a StrongBox-backed
+  key and falls back to the TEE on devices without a secure element.
 
 ---
 

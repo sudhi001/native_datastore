@@ -1,0 +1,19 @@
+root = true
+
+[*]
+end_of_line = lf
+insert_final_newline = true
+charset = utf-8
+trim_trailing_whitespace = true
+
+# ktlint configuration for the Android plugin sources.
+#
+# `intellij_idea` rather than the newer `ktlint_official` style: the latter
+# mandates a wrapping convention this codebase does not use, and enforcing it
+# would rewrite every file for no readability gain. The package name legitimately
+# contains an underscore — it mirrors the pub package name — so that rule is off.
+[*.{kt,kts}]
+indent_size = 4
+max_line_length = 100
+ktlint_code_style = intellij_idea
+ktlint_standard_package-name = disabled

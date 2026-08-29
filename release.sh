@@ -40,6 +40,17 @@ info "Tag:     $TAG"
 info "Commit:  $COMMIT_MSG"
 echo
 
+# ---- Keep the native manifests in step with pubspec ----
+# These three drifted apart before (pubspec 1.7.1, Gradle 1.6.2, podspec 1.5.3):
+# nothing reads them at build time, so nothing ever caught it. Rewriting them
+# here means the commit this script makes carries the fix, and CI's
+# check_versions.sh gate proves it stayed fixed.
+info "Syncing native version strings to $VERSION..."
+perl -pi -e "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" android/build.gradle.kts
+perl -pi -e "s/^(\s*s\.version\s*=\s*)'[^']*'/\${1}'$VERSION'/" ios/native_datastore.podspec
+./tool/check_versions.sh || error "version sync failed"
+echo
+
 # ---- Branch sanity ----
 BRANCH=$(git branch --show-current)
 if [ "$BRANCH" != "main" ]; then

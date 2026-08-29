@@ -1,5 +1,6 @@
 group = "in.sudhi.native_datastore"
-version = "1.6.2"
+// Kept in step with pubspec.yaml by release.sh.
+version = "1.8.0"
 
 buildscript {
     val kotlinVersion = "2.2.20"
@@ -51,6 +52,16 @@ android {
         getByName("main") {
             java.srcDirs("src/main/kotlin")
         }
+        getByName("test") {
+            java.srcDirs("src/test/kotlin")
+        }
+    }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+        }
     }
 
     defaultConfig {
@@ -69,4 +80,12 @@ project.extensions.configure(
 dependencies {
     implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+
+    // Unit tests only — never resolved by a consuming app, which does not run
+    // this module's test tasks. Run them with:
+    //   cd example/android && ./gradlew :native_datastore:testDebugUnitTest
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16")
+    testImplementation("androidx.test:core:1.7.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }

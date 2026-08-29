@@ -84,10 +84,10 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
         return stripped
     }
 
-    fileprivate func valuesEqual(_ a: Any?, _ b: Any?) -> Bool {
-        if a == nil && b == nil { return true }
-        guard let a = a, let b = b else { return false }
-        return (a as? NSObject)?.isEqual(b as? NSObject) ?? false
+    fileprivate func valuesEqual(_ lhs: Any?, _ rhs: Any?) -> Bool {
+        if lhs == nil && rhs == nil { return true }
+        guard let lhs, let rhs else { return false }
+        return (lhs as? NSObject)?.isEqual(rhs as? NSObject) ?? false
     }
 
     private func scalarKey(_ key: String) -> String { keyNamespace + key }
@@ -114,15 +114,15 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     fileprivate func withCrossProcessLock<T>(_ body: () -> T) -> T {
         guard let container = appGroupContainer else { return body() }
         let lockURL = container.appendingPathComponent(".native_datastore.lock")
-        let fd = open(lockURL.path, O_RDWR | O_CREAT, 0o644)
-        guard fd != -1 else {
+        let descriptor = open(lockURL.path, O_RDWR | O_CREAT, 0o644)
+        guard descriptor != -1 else {
             // Cannot obtain the lock file — proceed rather than fail the call;
             // behaviour then matches the previous in-process-only guarantee.
             return body()
         }
-        defer { close(fd) }
-        guard flock(fd, LOCK_EX) == 0 else { return body() }
-        defer { flock(fd, LOCK_UN) }
+        defer { close(descriptor) }
+        guard flock(descriptor, LOCK_EX) == 0 else { return body() }
+        defer { flock(descriptor, LOCK_UN) }
         // Pick up writes committed by other processes before reading.
         defaults.synchronize()
         let result = body()
@@ -132,18 +132,22 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
 
     private func onQueue<T>(
         _ completion: @escaping (Result<T, Error>) -> Void,
-        body: @escaping (NativeDatastorePlugin) -> T
+        body: @escaping (NativeDatastorePlugin) throws -> T
     ) {
         serialQueue.async { [weak self] in
             guard let self else {
                 completion(.failure(NativeDatastoreError(
-                    code: "plugin-detached",
+                    code: ErrorCode.detached,
                     message: "NativeDatastorePlugin is no longer attached",
                     details: nil
                 )))
                 return
             }
-            completion(.success(body(self)))
+            do {
+                completion(.success(try body(self)))
+            } catch {
+                completion(.failure(error))
+            }
         }
     }
 
@@ -152,6 +156,47 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     /// an NSNumber via CFGetTypeID.
     fileprivate func isStoredAsBool(_ value: Any) -> Bool {
         return CFGetTypeID(value as CFTypeRef) == CFBooleanGetTypeID()
+    }
+
+    /// Returns the Boolean stored at `key`, or nil when the slot holds
+    /// something else.
+    ///
+    /// Keeping the type test and the extraction together is the point: the
+    /// callers used to check `isStoredAsBool` and then force-cast to NSNumber
+    /// a line later, so any edit that separated the two would have crashed the
+    /// host app rather than returning nil.
+    fileprivate func storedBool(forKey key: String) -> Bool? {
+        guard let value = defaults.object(forKey: key),
+              isStoredAsBool(value),
+              let number = value as? NSNumber else {
+            return nil
+        }
+        return number.boolValue
+    }
+
+    /// Returns the integer stored at `key`, or nil when the slot holds
+    /// something else — a Boolean, a floating-point value, or a non-number.
+    fileprivate func storedInt(forKey key: String) -> Int64? {
+        guard let value = defaults.object(forKey: key),
+              !isStoredAsBool(value),
+              let number = value as? NSNumber,
+              !isFloatingPointNumber(number) else {
+            return nil
+        }
+        return number.int64Value
+    }
+
+    /// Returns the number stored at `key` as a Double, or nil when the slot
+    /// holds a Boolean or a non-number.
+    ///
+    /// An integer widens, which is deliberate and matches Android's `getDouble`.
+    fileprivate func storedDouble(forKey key: String) -> Double? {
+        guard let value = defaults.object(forKey: key),
+              !isStoredAsBool(value),
+              let number = value as? NSNumber else {
+            return nil
+        }
+        return number.doubleValue
     }
 
     /// Returns true if `number` was stored as a floating-point value.
@@ -165,40 +210,30 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
 
     func getString(key: String, completion: @escaping (Result<String?, Error>) -> Void) {
         onQueue(completion) { plugin in
-            plugin.defaults.string(forKey: plugin.scalarKey(key))
+            // `defaults.string(forKey:)` returns an NSNumber's *string value*,
+            // so `setDouble("k", 1.5)` then `getString("k")` handed back "1.5".
+            // That contradicts `getInt`/`getBool` here, which already reject a
+            // cross-type read, and Android, which returns null. Asking for a
+            // String when the slot holds a number is a miss, not a conversion.
+            plugin.defaults.object(forKey: plugin.scalarKey(key)) as? String
         }
     }
 
     func getBool(key: String, completion: @escaping (Result<Bool?, Error>) -> Void) {
         onQueue(completion) { plugin in
-            guard let value = plugin.defaults.object(forKey: plugin.scalarKey(key)),
-                  plugin.isStoredAsBool(value) else {
-                return nil
-            }
-            return (value as! NSNumber).boolValue
+            plugin.storedBool(forKey: plugin.scalarKey(key))
         }
     }
 
     func getInt(key: String, completion: @escaping (Result<Int64?, Error>) -> Void) {
         onQueue(completion) { plugin in
-            guard let value = plugin.defaults.object(forKey: plugin.scalarKey(key)),
-                  !plugin.isStoredAsBool(value),
-                  let number = value as? NSNumber,
-                  !plugin.isFloatingPointNumber(number) else {
-                return nil
-            }
-            return number.int64Value
+            plugin.storedInt(forKey: plugin.scalarKey(key))
         }
     }
 
     func getDouble(key: String, completion: @escaping (Result<Double?, Error>) -> Void) {
         onQueue(completion) { plugin in
-            guard let value = plugin.defaults.object(forKey: plugin.scalarKey(key)),
-                  !plugin.isStoredAsBool(value),
-                  let number = value as? NSNumber else {
-                return nil
-            }
-            return number.doubleValue
+            plugin.storedDouble(forKey: plugin.scalarKey(key))
         }
     }
 
@@ -273,16 +308,47 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
         }
     }
 
+    /// A batch value converted to the exact form UserDefaults will hold, under
+    /// the namespaced key it belongs to.
+    private struct PreparedWrite {
+        let key: String
+        let value: Any
+    }
+
+    /// Converts one batch entry, or throws if the store cannot represent it.
+    ///
+    /// `setMany` used to hand the value straight to `defaults.set`, which raises
+    /// an Objective-C exception for anything that is not a property-list type —
+    /// so a byte payload took the whole app down rather than failing the call.
+    private func prepareWrite(key: String, value: Any) throws -> PreparedWrite {
+        if let list = value as? [String] {
+            return PreparedWrite(key: bucketKey(Self.listBucket, key), value: list)
+        }
+        if let typed = value as? FlutterStandardTypedData {
+            return PreparedWrite(key: bucketKey(Self.bytesBucket, key), value: typed.data)
+        }
+        if value is String || value is NSNumber {
+            return PreparedWrite(key: scalarKey(key), value: value)
+        }
+        throw NativeDatastoreError(
+            code: ErrorCode.unsupportedType,
+            message: "setMany: unsupported value type for key \"\(key)\": \(type(of: value))",
+            details: nil
+        )
+    }
+
     /// Writes many entries in one queue hop. Values must be String, Bool, Int,
-    /// Double or [String].
+    /// Double, Uint8List, or a list of String.
     func setMany(entries: [String: Any], completion: @escaping (Result<Void, Error>) -> Void) {
         onQueue(completion) { plugin in
-            for (key, value) in entries {
-                if let list = value as? [String] {
-                    plugin.defaults.set(list, forKey: plugin.bucketKey(Self.listBucket, key))
-                } else {
-                    plugin.defaults.set(value, forKey: plugin.scalarKey(key))
-                }
+            // Convert everything before writing anything, so an unsupported
+            // value fails the batch instead of leaving it half applied — the
+            // same all-or-nothing guarantee Android's single `edit {}` gives.
+            let prepared = try entries.map {
+                try plugin.prepareWrite(key: $0.key, value: $0.value)
+            }
+            for write in prepared {
+                plugin.defaults.set(write.value, forKey: write.key)
             }
         }
     }
@@ -312,11 +378,9 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
             var candidates = [plugin.scalarKey(key)]
             candidates.append(contentsOf: Self.typedBuckets.map { plugin.bucketKey($0, key) })
             var existed = false
-            for candidate in candidates {
-                if plugin.defaults.object(forKey: candidate) != nil {
-                    existed = true
-                    plugin.defaults.removeObject(forKey: candidate)
-                }
+            for candidate in candidates where plugin.defaults.object(forKey: candidate) != nil {
+                existed = true
+                plugin.defaults.removeObject(forKey: candidate)
             }
             return existed
         }
@@ -340,7 +404,7 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
                 guard key.hasPrefix(plugin.keyNamespace) else { continue }
                 let stripped = String(key.dropFirst(plugin.keyNamespace.count))
                 var realKey = stripped
-                var matchedBucket: String? = nil
+                var matchedBucket: String?
                 for bucket in Self.typedBuckets where stripped.hasPrefix(bucket) {
                     realKey = String(stripped.dropFirst(bucket.count))
                     matchedBucket = bucket
@@ -441,16 +505,9 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     func incrementInt(key: String, delta: Int64, completion: @escaping (Result<Int64, Error>) -> Void) {
         onQueue(completion) { plugin in
             plugin.withCrossProcessLock {
-                let k = plugin.scalarKey(key)
-                var current: Int64 = 0
-                if let value = plugin.defaults.object(forKey: k),
-                   !plugin.isStoredAsBool(value),
-                   let number = value as? NSNumber,
-                   !plugin.isFloatingPointNumber(number) {
-                    current = number.int64Value
-                }
-                let newValue = current + delta
-                plugin.defaults.set(newValue, forKey: k)
+                let storageKey = plugin.scalarKey(key)
+                let newValue = (plugin.storedInt(forKey: storageKey) ?? 0) + delta
+                plugin.defaults.set(newValue, forKey: storageKey)
                 return newValue
             }
         }
@@ -459,15 +516,9 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     func incrementDouble(key: String, delta: Double, completion: @escaping (Result<Double, Error>) -> Void) {
         onQueue(completion) { plugin in
             plugin.withCrossProcessLock {
-                let k = plugin.scalarKey(key)
-                var current = 0.0
-                if let value = plugin.defaults.object(forKey: k),
-                   !plugin.isStoredAsBool(value),
-                   let number = value as? NSNumber {
-                    current = number.doubleValue
-                }
-                let newValue = current + delta
-                plugin.defaults.set(newValue, forKey: k)
+                let storageKey = plugin.scalarKey(key)
+                let newValue = (plugin.storedDouble(forKey: storageKey) ?? 0.0) + delta
+                plugin.defaults.set(newValue, forKey: storageKey)
                 return newValue
             }
         }
@@ -476,13 +527,9 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     func toggleBool(key: String, completion: @escaping (Result<Bool, Error>) -> Void) {
         onQueue(completion) { plugin in
             plugin.withCrossProcessLock {
-                let k = plugin.scalarKey(key)
-                var current = false
-                if let value = plugin.defaults.object(forKey: k), plugin.isStoredAsBool(value) {
-                    current = (value as! NSNumber).boolValue
-                }
-                let newValue = !current
-                plugin.defaults.set(newValue, forKey: k)
+                let storageKey = plugin.scalarKey(key)
+                let newValue = !(plugin.storedBool(forKey: storageKey) ?? false)
+                plugin.defaults.set(newValue, forKey: storageKey)
                 return newValue
             }
         }
@@ -491,12 +538,12 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     func compareAndSetString(key: String, expected: String?, value: String?, completion: @escaping (Result<Bool, Error>) -> Void) {
         onQueue(completion) { plugin in
             plugin.withCrossProcessLock {
-                let k = plugin.scalarKey(key)
-                guard plugin.defaults.string(forKey: k) == expected else { return false }
+                let storageKey = plugin.scalarKey(key)
+                guard plugin.defaults.string(forKey: storageKey) == expected else { return false }
                 if let value = value {
-                    plugin.defaults.set(value, forKey: k)
+                    plugin.defaults.set(value, forKey: storageKey)
                 } else {
-                    plugin.defaults.removeObject(forKey: k)
+                    plugin.defaults.removeObject(forKey: storageKey)
                 }
                 return true
             }
@@ -506,19 +553,12 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     func compareAndSetInt(key: String, expected: Int64?, value: Int64?, completion: @escaping (Result<Bool, Error>) -> Void) {
         onQueue(completion) { plugin in
             plugin.withCrossProcessLock {
-                let k = plugin.scalarKey(key)
-                var current: Int64? = nil
-                if let v = plugin.defaults.object(forKey: k),
-                   !plugin.isStoredAsBool(v),
-                   let number = v as? NSNumber,
-                   !plugin.isFloatingPointNumber(number) {
-                    current = number.int64Value
-                }
-                guard current == expected else { return false }
+                let storageKey = plugin.scalarKey(key)
+                guard plugin.storedInt(forKey: storageKey) == expected else { return false }
                 if let value = value {
-                    plugin.defaults.set(value, forKey: k)
+                    plugin.defaults.set(value, forKey: storageKey)
                 } else {
-                    plugin.defaults.removeObject(forKey: k)
+                    plugin.defaults.removeObject(forKey: storageKey)
                 }
                 return true
             }
@@ -528,18 +568,12 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     func compareAndSetDouble(key: String, expected: Double?, value: Double?, completion: @escaping (Result<Bool, Error>) -> Void) {
         onQueue(completion) { plugin in
             plugin.withCrossProcessLock {
-                let k = plugin.scalarKey(key)
-                var current: Double? = nil
-                if let v = plugin.defaults.object(forKey: k),
-                   !plugin.isStoredAsBool(v),
-                   let number = v as? NSNumber {
-                    current = number.doubleValue
-                }
-                guard current == expected else { return false }
+                let storageKey = plugin.scalarKey(key)
+                guard plugin.storedDouble(forKey: storageKey) == expected else { return false }
                 if let value = value {
-                    plugin.defaults.set(value, forKey: k)
+                    plugin.defaults.set(value, forKey: storageKey)
                 } else {
-                    plugin.defaults.removeObject(forKey: k)
+                    plugin.defaults.removeObject(forKey: storageKey)
                 }
                 return true
             }
@@ -549,16 +583,12 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
     func compareAndSetBool(key: String, expected: Bool?, value: Bool?, completion: @escaping (Result<Bool, Error>) -> Void) {
         onQueue(completion) { plugin in
             plugin.withCrossProcessLock {
-                let k = plugin.scalarKey(key)
-                var current: Bool? = nil
-                if let v = plugin.defaults.object(forKey: k), plugin.isStoredAsBool(v) {
-                    current = (v as! NSNumber).boolValue
-                }
-                guard current == expected else { return false }
+                let storageKey = plugin.scalarKey(key)
+                guard plugin.storedBool(forKey: storageKey) == expected else { return false }
                 if let value = value {
-                    plugin.defaults.set(value, forKey: k)
+                    plugin.defaults.set(value, forKey: storageKey)
                 } else {
-                    plugin.defaults.removeObject(forKey: k)
+                    plugin.defaults.removeObject(forKey: storageKey)
                 }
                 return true
             }
@@ -585,8 +615,8 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
                 }
                 if exists && !overwrite { continue }
 
-                if let s = value as? String {
-                    plugin.defaults.set(s, forKey: plugin.scalarKey(key))
+                if let string = value as? String {
+                    plugin.defaults.set(string, forKey: plugin.scalarKey(key))
                 } else if let arr = value as? [String] {
                     plugin.defaults.set(arr, forKey: plugin.bucketKey(Self.listBucket, key))
                 } else if let number = value as? NSNumber {
@@ -643,11 +673,20 @@ class DatastoreChangesStreamHandler: NSObject, FlutterStreamHandler {
     /// The queue is serial, so diffs stay strictly ordered and `snapshot` is
     /// only ever touched here.
     ///
-    /// Deliberately *not* coalesced: collapsing a burst into a single diff
-    /// would drop intermediate values, so two quick writes would surface only
-    /// the last one. Watchers are documented to see each change, and the
-    /// on-device integration test asserts it.
+    /// This handler adds no coalescing of its own, but Foundation does its
+    /// own: `didChangeNotification` is posted once per runloop turn, so two
+    /// writes in the same turn produce one diff and the intermediate value is
+    /// never seen. That is why the public Dart doc tells watchers to treat the
+    /// stream as "the current value, kept fresh" rather than as every value the
+    /// key ever held — Android, driven by a DataStore flow, does emit per write.
     private let diffQueue = DispatchQueue(label: "native_datastore.changes")
+
+    /// The registration token for the `didChangeNotification` observation.
+    ///
+    /// The token form removes exactly this registration.
+    /// `removeObserver(self)` drops *every* observation the object holds, which
+    /// is a blunter instrument than `onCancel` means to reach for.
+    private var observer: NSObjectProtocol?
 
     init(plugin: NativeDatastorePlugin) {
         self.plugin = plugin
@@ -656,20 +695,24 @@ class DatastoreChangesStreamHandler: NSObject, FlutterStreamHandler {
     func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
         // Guard against a second onListen without an intervening onCancel,
         // which would otherwise register a duplicate observer.
-        NotificationCenter.default.removeObserver(self)
+        stopObserving()
         sink = events
         snapshot = plugin?.namespacedSnapshot() ?? [:]
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(defaultsChanged),
-            name: UserDefaults.didChangeNotification,
-            object: nil
-        )
+        observer = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            self?.diffQueue.async { self?.emitChanges() }
+        }
         return nil
     }
 
-    @objc private func defaultsChanged() {
-        diffQueue.async { [weak self] in self?.emitChanges() }
+    private func stopObserving() {
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+            self.observer = nil
+        }
     }
 
     private func emitChanges() {
@@ -688,7 +731,7 @@ class DatastoreChangesStreamHandler: NSObject, FlutterStreamHandler {
     }
 
     func onCancel(withArguments arguments: Any?) -> FlutterError? {
-        NotificationCenter.default.removeObserver(self)
+        stopObserving()
         sink = nil
         diffQueue.async { [weak self] in self?.snapshot = [:] }
         return nil

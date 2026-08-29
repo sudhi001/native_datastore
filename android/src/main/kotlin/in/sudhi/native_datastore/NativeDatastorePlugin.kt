@@ -8,23 +8,19 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.core.MultiProcessDataStoreFactory
 import androidx.datastore.core.Serializer
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.byteArrayPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
-import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.EventChannel
-import java.io.File
-import java.io.InputStream
-import java.io.OutputStream
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +31,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
+import java.util.concurrent.atomic.AtomicBoolean
 
 // Serializes a Preferences snapshot to type-tagged JSON so it can back a
 // MultiProcessDataStore. The plugin stores String, Boolean, Long, Double and —
@@ -84,6 +84,34 @@ internal object PreferencesJsonSerializer : Serializer<Preferences> {
     }
 }
 
+/**
+ * Process-wide registry of multi-process DataStores.
+ *
+ * DataStore records every backing file in a global `activeFiles` set and throws
+ * `IllegalStateException: There are multiple DataStores active for the same
+ * file` if a second instance opens one. The single-process stores are already
+ * process-wide — they are `Context` property delegates — but a plugin instance
+ * is not: a second `FlutterEngine` (add-to-app, `FlutterEngineGroup`, a
+ * background isolate) constructs another one. Caching per instance therefore
+ * crashed the second engine, so the multi-process stores live here instead.
+ */
+internal object MultiProcessStores {
+    private val stores = mutableMapOf<String, DataStore<Preferences>>()
+
+    fun get(cacheKey: String, produceFile: () -> File): DataStore<Preferences> =
+        synchronized(stores) {
+            stores.getOrPut(cacheKey) {
+                MultiProcessDataStoreFactory.create(
+                    serializer = PreferencesJsonSerializer,
+                    corruptionHandler = ReplaceFileCorruptionHandler {
+                        emptyPreferences()
+                    },
+                    produceFile = produceFile,
+                )
+            }
+        }
+}
+
 // Event channel that streams the list of user-facing keys changed on each
 // store mutation. Hand-written (Pigeon models request/response, not streams).
 private const val CHANGES_CHANNEL = "in.sudhi.native_datastore/changes"
@@ -91,10 +119,16 @@ private const val CHANGES_CHANNEL = "in.sudhi.native_datastore/changes"
 // Bucket prefixes duplicated for the top-level change-stream helper so it can
 // map raw stored keys back to user-facing keys. Keep in sync with the
 // companion constants of NativeDatastorePlugin.
-private val CHANGE_STREAM_BUCKETS =
+internal val CHANGE_STREAM_BUCKETS =
     listOf("__list__:", "__bytes__:", "__datetime__:", "__map__:")
 
-private fun toUserFacingKey(rawKey: String): String {
+// `ByteArray` compares by reference in Kotlin, and the multi-process store
+// re-parses its JSON on every emission — so a plain `!=` reported every
+// byte-valued key as changed on every write. iOS compares `NSData` by content.
+internal fun valuesEqual(a: Any?, b: Any?): Boolean =
+    if (a is ByteArray && b is ByteArray) a.contentEquals(b) else a == b
+
+internal fun toUserFacingKey(rawKey: String): String {
     for (bucket in CHANGE_STREAM_BUCKETS) {
         if (rawKey.startsWith(bucket)) return rawKey.removePrefix(bucket)
     }
@@ -113,11 +147,13 @@ private fun toUserFacingKey(rawKey: String): String {
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
     name = "native_datastore_prefs",
     corruptionHandler = ReplaceFileCorruptionHandler(
-        produceNewData = { emptyPreferences() }
-    )
+        produceNewData = { emptyPreferences() },
+    ),
 )
 
-class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
+class NativeDatastorePlugin :
+    FlutterPlugin,
+    DatastoreApi {
 
     companion object {
         // Per-type buckets sharing the flat DataStore key space. Keep these
@@ -128,6 +164,10 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
         private const val MAP_BUCKET = "__map__:"
         private val TYPED_BUCKETS =
             listOf(LIST_BUCKET, BYTES_BUCKET, DATETIME_BUCKET, MAP_BUCKET)
+
+        // Backing file for multi-process mode, kept separate from the default
+        // single-process data so enabling the mode never touches it.
+        private const val MP_FILE_NAME = "native_datastore_mp.json"
 
         // shared_preferences tags list- and BigInteger-encoded strings with
         // these base64 markers ("This is the prefix for a list." etc.).
@@ -140,28 +180,15 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
     @Volatile
     private var multiProcessEnabled = false
 
-    // Lazily-created multi-process store, kept in its own file so enabling
-    // multi-process mode never touches the default single-process data.
-    @Volatile
-    private var mpStore: DataStore<Preferences>? = null
-
     /**
      * Returns the active backing store: the default single-process
      * Preferences DataStore, or — when [configure] enabled multi-process
-     * mode — a [MultiProcessDataStoreFactory] store in a separate file.
+     * mode — the process-wide multi-process store in a separate file.
      */
     private fun storeFor(ctx: Context): DataStore<Preferences> {
         if (!multiProcessEnabled) return ctx.dataStore
-        return mpStore ?: synchronized(this) {
-            mpStore ?: MultiProcessDataStoreFactory.create(
-                serializer = PreferencesJsonSerializer,
-                corruptionHandler = ReplaceFileCorruptionHandler {
-                    emptyPreferences()
-                },
-                produceFile = {
-                    File(ctx.filesDir, "datastore/native_datastore_mp.json")
-                }
-            ).also { mpStore = it }
+        return MultiProcessStores.get(MP_FILE_NAME) {
+            File(ctx.filesDir, "datastore/$MP_FILE_NAME")
         }
     }
 
@@ -219,27 +246,54 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
      */
     private class ChangesStreamHandler(
         private val scope: CoroutineScope,
-        private val storeProvider: () -> DataStore<Preferences>
+        private val storeProvider: () -> DataStore<Preferences>,
     ) : EventChannel.StreamHandler {
         private val mainHandler = Handler(Looper.getMainLooper())
         private var job: Job? = null
 
+        @Volatile
+        private var sink: EventChannel.EventSink? = null
+
+        // Kept across a rebind so the first emission from a newly selected
+        // store diffs against what subscribers were last told, rather than
+        // silently establishing a fresh baseline.
+        @Volatile
+        private var previous: Map<String, Any?>? = null
+
         override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-            val sink = events ?: return
+            sink = events ?: return
+            previous = null
+            start()
+        }
+
+        /**
+         * Restarts collection against whatever store is active now.
+         *
+         * [start] resolves the store once, when collection begins, so without
+         * this a [configure] call that switched to the multi-process store
+         * would leave an existing watcher bound to the old one — still open,
+         * but never firing again.
+         */
+        fun rebind() {
+            if (sink != null) start()
+        }
+
+        private fun start() {
+            val target = sink ?: return
+            job?.cancel()
             job = scope.launch {
-                var previous: Map<String, Any?>? = null
                 storeProvider().data.collect { prefs ->
                     val current =
                         prefs.asMap().entries.associate { it.key.name to it.value }
                     val prev = previous
                     if (prev != null) {
                         val changedRaw = (current.keys + prev.keys).filter {
-                            current[it] != prev[it]
+                            !valuesEqual(current[it], prev[it])
                         }
                         if (changedRaw.isNotEmpty()) {
                             val userKeys =
                                 changedRaw.map { toUserFacingKey(it) }.distinct()
-                            mainHandler.post { sink.success(userKeys) }
+                            mainHandler.post { target.success(userKeys) }
                         }
                     }
                     previous = current
@@ -250,11 +304,12 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
         override fun onCancel(arguments: Any?) {
             job?.cancel()
             job = null
+            sink = null
+            previous = null
         }
 
         fun dispose() {
-            job?.cancel()
-            job = null
+            onCancel(null)
         }
     }
 
@@ -268,20 +323,11 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
      *     callback with a detached-state error so the Dart-side Future never
      *     hangs in `BinaryMessenger`'s pending-replies map.
      */
-    private fun <T> launchOnAttached(
-        callback: (Result<T>) -> Unit,
-        block: suspend (Context) -> T
-    ) {
+    private fun <T> launchOnAttached(callback: (Result<T>) -> Unit, block: suspend (Context) -> T) {
         val currentScope = scope
         val currentContext = context
         if (currentScope == null || currentContext == null) {
-            callback(
-                Result.failure(
-                    IllegalStateException(
-                        "NativeDatastorePlugin is not attached to a Flutter engine"
-                    )
-                )
-            )
+            callback(Result.failure(detachedError("NativeDatastorePlugin")))
             return
         }
         val responded = AtomicBoolean(false)
@@ -295,7 +341,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
                 throw e
             } catch (e: Exception) {
                 if (responded.compareAndSet(false, true)) {
-                    callback(Result.failure(e))
+                    callback(Result.failure(toPigeonError(e)))
                 }
             }
         }
@@ -306,11 +352,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
             if (cause is CancellationException &&
                 responded.compareAndSet(false, true)
             ) {
-                callback(
-                    Result.failure(
-                        IllegalStateException("NativeDatastorePlugin was detached")
-                    )
-                )
+                callback(Result.failure(detachedError("NativeDatastorePlugin")))
             }
         }
     }
@@ -338,38 +380,54 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
 
     // ---------- Getters ----------
 
+    /**
+     * Reads the entry named [name] without a type cast, or `null` if absent.
+     *
+     * All four scalar types share one flat key space, and `Preferences.get`
+     * casts unchecked — so `prefs[longPreferencesKey(k)]` after a `setDouble(k)`
+     * hands back a `Double` typed as `Long`, which only fails once it reaches
+     * the Pigeon boundary. `asMap()` is keyed by `Preferences.Key`, whose
+     * equality is by name alone, so a String-typed probe is an O(1) lookup of
+     * whatever type actually sits under that name. Every getter branches on the
+     * runtime type and returns `null` on a mismatch, matching iOS.
+     */
+    private fun rawValue(prefs: Preferences, name: String): Any? =
+        prefs.asMap()[stringPreferencesKey(name)]
+
     override fun getString(key: String, callback: (Result<String?>) -> Unit) {
         launchOnAttached(callback) { ctx ->
-            val prefs = storeFor(ctx).data.first()
-            prefs[stringPreferencesKey(key)]
+            rawValue(storeFor(ctx).data.first(), key) as? String
         }
     }
 
     override fun getBool(key: String, callback: (Result<Boolean?>) -> Unit) {
         launchOnAttached(callback) { ctx ->
-            val prefs = storeFor(ctx).data.first()
-            prefs[booleanPreferencesKey(key)]
+            rawValue(storeFor(ctx).data.first(), key) as? Boolean
         }
     }
 
     override fun getInt(key: String, callback: (Result<Long?>) -> Unit) {
         launchOnAttached(callback) { ctx ->
-            val prefs = storeFor(ctx).data.first()
-            prefs[longPreferencesKey(key)]
+            rawValue(storeFor(ctx).data.first(), key) as? Long
         }
     }
 
     override fun getDouble(key: String, callback: (Result<Double?>) -> Unit) {
         launchOnAttached(callback) { ctx ->
-            val prefs = storeFor(ctx).data.first()
-            prefs[doublePreferencesKey(key)]
+            // Widening a stored int mirrors iOS, where `getDouble` accepts any
+            // non-boolean NSNumber.
+            when (val raw = rawValue(storeFor(ctx).data.first(), key)) {
+                is Double -> raw
+                is Long -> raw.toDouble()
+                else -> null
+            }
         }
     }
 
     override fun getStringList(key: String, callback: (Result<List<String>?>) -> Unit) {
         launchOnAttached(callback) { ctx ->
             val prefs = storeFor(ctx).data.first()
-            val json = prefs[stringPreferencesKey(LIST_BUCKET + key)]
+            val json = rawValue(prefs, LIST_BUCKET + key) as? String
             if (json == null) {
                 null
             } else {
@@ -480,19 +538,43 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
         else -> value
     }
 
+    /**
+     * Ranks the bucket a stored entry came from, for the cases where one user
+     * key holds entries in more than one.
+     *
+     * `getAll` and `getMany` return a map keyed by the user-facing name, so only
+     * one entry can survive. Iterating `asMap()` and letting the last one win
+     * made that outcome depend on hash order — a different answer from iOS,
+     * which has always resolved by a fixed priority, and potentially a different
+     * answer between two runs. Typed buckets outrank the scalar slot; among
+     * themselves they follow [TYPED_BUCKETS].
+     */
+    private fun bucketRank(bucket: String?): Int =
+        if (bucket == null) -1 else TYPED_BUCKETS.size - TYPED_BUCKETS.indexOf(bucket)
+
+    /**
+     * Collapses a snapshot to user-facing keys, keeping the highest-ranked
+     * bucket for each. [wanted] limits the result; `null` takes everything.
+     */
+    private fun collapseToUserKeys(prefs: Preferences, wanted: Set<String>?): Map<String, Any> {
+        val result = mutableMapOf<String, Any>()
+        val ranks = mutableMapOf<String, Int>()
+        for ((prefKey, value) in prefs.asMap()) {
+            val (realKey, bucket) = stripBucket(prefKey.name)
+            if (wanted != null && realKey !in wanted) continue
+            val rank = bucketRank(bucket)
+            if (rank >= (ranks[realKey] ?: Int.MIN_VALUE)) {
+                ranks[realKey] = rank
+                result[realKey] = decodeStored(bucket, value)
+            }
+        }
+        return result
+    }
+
     override fun getMany(keys: List<String>, callback: (Result<Map<String, Any>>) -> Unit) {
         launchOnAttached(callback) { ctx ->
             // One snapshot for the whole batch instead of one per key.
-            val prefs = storeFor(ctx).data.first()
-            val wanted = keys.toHashSet()
-            val result = mutableMapOf<String, Any>()
-            for ((prefKey, value) in prefs.asMap()) {
-                val (realKey, bucket) = stripBucket(prefKey.name)
-                if (realKey in wanted) {
-                    result[realKey] = decodeStored(bucket, value)
-                }
-            }
-            result
+            collapseToUserKeys(storeFor(ctx).data.first(), keys.toHashSet())
         }
     }
 
@@ -513,8 +595,11 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
                         is Boolean -> prefs[booleanPreferencesKey(write.name)] = v
                         is Long -> prefs[longPreferencesKey(write.name)] = v
                         is Double -> prefs[doublePreferencesKey(write.name)] = v
-                        else -> throw IllegalArgumentException(
-                            "setMany: unexpected prepared type ${v.javaClass.name}"
+                        is ByteArray -> prefs[byteArrayPreferencesKey(write.name)] = v
+                        else -> throw NativeDatastoreError(
+                            ErrorCode.UNSUPPORTED_TYPE,
+                            "setMany: unexpected prepared type ${v.javaClass.name}",
+                            null,
                         )
                     }
                 }
@@ -534,12 +619,28 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
         is Int -> PreparedWrite(key, value.toLong())
         is Long -> PreparedWrite(key, value)
         is Double -> PreparedWrite(key, value)
+        // Byte payloads round-trip through the batch API, so a getMany result
+        // can be handed straight back to setMany.
+        is ByteArray -> PreparedWrite(BYTES_BUCKET + key, value)
         is List<*> -> PreparedWrite(
             LIST_BUCKET + key,
-            JSONArray(value.map { it as? String ?: it.toString() }).toString()
+            // Coercing a non-String element with `toString()` silently changed
+            // the value; the typed setters exist for anything else.
+            JSONArray(
+                value.map {
+                    it as? String ?: throw NativeDatastoreError(
+                        ErrorCode.UNSUPPORTED_TYPE,
+                        "setMany: list values for key \"$key\" must be String, " +
+                            "found ${it?.javaClass?.name ?: "null"}",
+                        null,
+                    )
+                },
+            ).toString(),
         )
-        else -> throw IllegalArgumentException(
-            "setMany: unsupported value type for key \"$key\": ${value.javaClass.name}"
+        else -> throw NativeDatastoreError(
+            ErrorCode.UNSUPPORTED_TYPE,
+            "setMany: unsupported value type for key \"$key\": ${value.javaClass.name}",
+            null,
         )
     }
 
@@ -561,25 +662,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
 
     override fun getAll(callback: (Result<Map<String, Any>>) -> Unit) {
         launchOnAttached(callback) { ctx ->
-            val prefs = storeFor(ctx).data.first()
-            val result = mutableMapOf<String, Any>()
-            for ((prefKey, value) in prefs.asMap()) {
-                val (realKey, bucket) = stripBucket(prefKey.name)
-                when (bucket) {
-                    LIST_BUCKET -> {
-                        val jsonArray = JSONArray(value as String)
-                        val list = List(jsonArray.length()) { i -> jsonArray.getString(i) }
-                        result[realKey] = list
-                    }
-                    BYTES_BUCKET -> {
-                        result[realKey] = decodeStored(BYTES_BUCKET, value)
-                    }
-                    else -> {
-                        result[realKey] = value
-                    }
-                }
-            }
-            result
+            collapseToUserKeys(storeFor(ctx).data.first(), wanted = null)
         }
     }
 
@@ -592,9 +675,9 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
 
     override fun containsKey(key: String, callback: (Result<Boolean>) -> Unit) {
         launchOnAttached(callback) { ctx ->
+            // One snapshot, then an O(1) probe per bucket rather than a scan.
             val prefs = storeFor(ctx).data.first()
-            val candidates = bucketCandidates(key)
-            prefs.asMap().keys.any { it.name in candidates }
+            bucketCandidates(key).any { rawValue(prefs, it) != null }
         }
     }
 
@@ -609,12 +692,9 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
      * itself — the dominant cost of a large `setBytes`/`getBytes`.
      */
     private fun readBytes(prefs: Preferences, key: String): ByteArray? {
-        val name = BYTES_BUCKET + key
-        // Read the raw entry and branch on its runtime type. `Preferences.get`
-        // casts unchecked, so asking for a ByteArray key when a legacy Base64
-        // String is stored would hand back a String typed as ByteArray.
-        val raw = prefs.asMap().entries.firstOrNull { it.key.name == name }?.value
-        return when (raw) {
+        // Branch on the runtime type: a legacy Base64 String sits under the same
+        // name as the native ByteArray that replaced it.
+        return when (val raw = rawValue(prefs, BYTES_BUCKET + key)) {
             is ByteArray -> raw
             is String -> Base64.decode(raw, Base64.DEFAULT)
             else -> null
@@ -642,8 +722,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
 
     override fun getDateTime(key: String, callback: (Result<Long?>) -> Unit) {
         launchOnAttached(callback) { ctx ->
-            val prefs = storeFor(ctx).data.first()
-            prefs[longPreferencesKey(DATETIME_BUCKET + key)]
+            rawValue(storeFor(ctx).data.first(), DATETIME_BUCKET + key) as? Long
         }
     }
 
@@ -659,8 +738,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
 
     override fun getMap(key: String, callback: (Result<String?>) -> Unit) {
         launchOnAttached(callback) { ctx ->
-            val prefs = storeFor(ctx).data.first()
-            prefs[stringPreferencesKey(MAP_BUCKET + key)]
+            rawValue(storeFor(ctx).data.first(), MAP_BUCKET + key) as? String
         }
     }
 
@@ -675,12 +753,19 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
     // ---------- Atomic read-modify-write ----------
     // DataStore's `edit { }` runs its block as a single serialized transaction,
     // so read-then-write inside it is atomic with respect to other writers.
+    //
+    // These read through `rawValue` for the same reason the getters do: the
+    // scalars share one key space, so a value written under a different type
+    // would otherwise be cast unchecked and blow up inside the transaction.
+    // An increment or toggle treats a mismatched value as absent — matching
+    // iOS, where `integer(forKey:)` reports 0 for a non-numeric entry — and a
+    // compare-and-set simply fails to match it.
 
     override fun incrementInt(key: String, delta: Long, callback: (Result<Long>) -> Unit) {
         launchOnAttached(callback) { ctx ->
             var newValue = 0L
             storeFor(ctx).edit { prefs ->
-                newValue = (prefs[longPreferencesKey(key)] ?: 0L) + delta
+                newValue = ((rawValue(prefs, key) as? Long) ?: 0L) + delta
                 prefs[longPreferencesKey(key)] = newValue
             }
             newValue
@@ -691,7 +776,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
         launchOnAttached(callback) { ctx ->
             var newValue = 0.0
             storeFor(ctx).edit { prefs ->
-                newValue = (prefs[doublePreferencesKey(key)] ?: 0.0) + delta
+                newValue = ((rawValue(prefs, key) as? Double) ?: 0.0) + delta
                 prefs[doublePreferencesKey(key)] = newValue
             }
             newValue
@@ -702,7 +787,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
         launchOnAttached(callback) { ctx ->
             var newValue = false
             storeFor(ctx).edit { prefs ->
-                newValue = !(prefs[booleanPreferencesKey(key)] ?: false)
+                newValue = !((rawValue(prefs, key) as? Boolean) ?: false)
                 prefs[booleanPreferencesKey(key)] = newValue
             }
             newValue
@@ -713,13 +798,13 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
         key: String,
         expected: String?,
         value: String?,
-        callback: (Result<Boolean>) -> Unit
+        callback: (Result<Boolean>) -> Unit,
     ) {
         launchOnAttached(callback) { ctx ->
             val prefKey = stringPreferencesKey(key)
             var swapped = false
             storeFor(ctx).edit { prefs ->
-                if (prefs[prefKey] == expected) {
+                if (rawValue(prefs, key) == expected) {
                     if (value == null) prefs.remove(prefKey) else prefs[prefKey] = value
                     swapped = true
                 }
@@ -732,13 +817,13 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
         key: String,
         expected: Long?,
         value: Long?,
-        callback: (Result<Boolean>) -> Unit
+        callback: (Result<Boolean>) -> Unit,
     ) {
         launchOnAttached(callback) { ctx ->
             val prefKey = longPreferencesKey(key)
             var swapped = false
             storeFor(ctx).edit { prefs ->
-                if (prefs[prefKey] == expected) {
+                if (rawValue(prefs, key) == expected) {
                     if (value == null) prefs.remove(prefKey) else prefs[prefKey] = value
                     swapped = true
                 }
@@ -751,13 +836,13 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
         key: String,
         expected: Double?,
         value: Double?,
-        callback: (Result<Boolean>) -> Unit
+        callback: (Result<Boolean>) -> Unit,
     ) {
         launchOnAttached(callback) { ctx ->
             val prefKey = doublePreferencesKey(key)
             var swapped = false
             storeFor(ctx).edit { prefs ->
-                if (prefs[prefKey] == expected) {
+                if (rawValue(prefs, key) == expected) {
                     if (value == null) prefs.remove(prefKey) else prefs[prefKey] = value
                     swapped = true
                 }
@@ -770,13 +855,13 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
         key: String,
         expected: Boolean?,
         value: Boolean?,
-        callback: (Result<Boolean>) -> Unit
+        callback: (Result<Boolean>) -> Unit,
     ) {
         launchOnAttached(callback) { ctx ->
             val prefKey = booleanPreferencesKey(key)
             var swapped = false
             storeFor(ctx).edit { prefs ->
-                if (prefs[prefKey] == expected) {
+                if (rawValue(prefs, key) == expected) {
                     if (value == null) prefs.remove(prefKey) else prefs[prefKey] = value
                     swapped = true
                 }
@@ -789,7 +874,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
 
     override fun migrateFromSharedPreferences(
         overwrite: Boolean,
-        callback: (Result<Long>) -> Unit
+        callback: (Result<Long>) -> Unit,
     ) {
         launchOnAttached(callback) { ctx ->
             // The Flutter shared_preferences plugin stores everything in a
@@ -798,7 +883,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
             // import by runtime type rather than guessing the on-disk encoding.
             val sp = ctx.getSharedPreferences(
                 "FlutterSharedPreferences",
-                Context.MODE_PRIVATE
+                Context.MODE_PRIVATE,
             )
             val existing = storeFor(ctx).data.first()
             var imported = 0L
@@ -808,7 +893,7 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
                     val key = rawKey.removePrefix("flutter.")
                     if (key.isEmpty()) continue
                     val alreadyHere = bucketCandidates(key).any { cand ->
-                        existing.asMap().keys.any { it.name == cand }
+                        rawValue(existing, cand) != null
                     }
                     if (alreadyHere && !overwrite) continue
                     when (value) {
@@ -847,11 +932,15 @@ class NativeDatastorePlugin : FlutterPlugin, DatastoreApi {
     override fun configure(
         multiProcess: Boolean,
         appGroupId: String?,
-        callback: (Result<Unit>) -> Unit
+        callback: (Result<Unit>) -> Unit,
     ) {
         // appGroupId is an iOS-only concept; ignored on Android.
-        launchOnAttached(callback) { _ ->
-            multiProcessEnabled = multiProcess
-        }
+        //
+        // Applied on the calling thread rather than inside the coroutine: the
+        // flag selects the backing store, so deferring it let calls already in
+        // flight land on the store the caller was switching away from.
+        multiProcessEnabled = multiProcess
+        changesHandler?.rebind()
+        launchOnAttached(callback) { }
     }
 }

@@ -1,6 +1,7 @@
 Pod::Spec.new do |s|
   s.name             = 'native_datastore'
-  s.version          = '1.5.3'
+  # Kept in step with pubspec.yaml by release.sh.
+  s.version          = '1.8.0'
   s.summary          = 'Flutter plugin for persistent key-value storage using UserDefaults on iOS.'
   s.description      = <<-DESC
 A modern Flutter plugin for persistent key-value storage.

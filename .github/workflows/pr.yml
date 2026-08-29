@@ -1,8 +1,8 @@
 name: PR
 
-# Runs on every pull request targeting main. The `test` job is a required
+# Runs on every pull request targeting main. The `checks` job is a required
 # status check for the protected `main` branch (see branch protection rules),
-# so a PR can only merge once analysis and unit tests pass.
+# so a PR can only merge once every gate in checks.yml passes.
 on:
   pull_request:
     branches: [main]
@@ -12,30 +12,5 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - run: flutter --version
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Formatting
-        run: dart format --output=none --set-exit-if-changed .
-
-      - name: Static analysis
-        run: flutter analyze
-
-      - name: Unit tests
-        run: flutter test --coverage
-
-      - name: Coverage gate
-        run: ./tool/check_coverage.sh
+  checks:
+    uses: ./.github/workflows/checks.yml
