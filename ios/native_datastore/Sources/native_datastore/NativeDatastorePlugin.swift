@@ -397,9 +397,26 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
 
     // MARK: - Query
 
+    /// Ranks the namespace a stored entry came from, for the cases where one
+    /// user key holds entries in more than one.
+    ///
+    /// `getAll` returns a map keyed by the user-facing name, so only one entry
+    /// can survive. Letting the last one out of `dictionaryRepresentation()`
+    /// win made the answer depend on that dictionary's order — it differed
+    /// between a warm simulator and a clean CI runner, and from Android.
+    /// Typed namespaces outrank the scalar slot; among themselves they follow
+    /// `typedBuckets`, the same order `getMany` and Android already use.
+    private static func bucketRank(_ bucket: String?) -> Int {
+        guard let bucket, let index = typedBuckets.firstIndex(of: bucket) else {
+            return -1
+        }
+        return typedBuckets.count - index
+    }
+
     func getAll(completion: @escaping (Result<[String: Any], Error>) -> Void) {
         onQueue(completion) { plugin in
             var result: [String: Any] = [:]
+            var ranks: [String: Int] = [:]
             for (key, value) in plugin.defaults.dictionaryRepresentation() {
                 guard key.hasPrefix(plugin.keyNamespace) else { continue }
                 let stripped = String(key.dropFirst(plugin.keyNamespace.count))
@@ -410,13 +427,15 @@ public class NativeDatastorePlugin: NSObject, FlutterPlugin, DatastoreApi {
                     matchedBucket = bucket
                     break
                 }
+                let rank = Self.bucketRank(matchedBucket)
+                guard rank >= ranks[realKey] ?? Int.min else { continue }
                 if matchedBucket == Self.bytesBucket {
-                    if let data = value as? Data {
-                        result[realKey] = FlutterStandardTypedData(bytes: data)
-                    }
+                    guard let data = value as? Data else { continue }
+                    result[realKey] = FlutterStandardTypedData(bytes: data)
                 } else {
                     result[realKey] = value
                 }
+                ranks[realKey] = rank
             }
             return result
         }

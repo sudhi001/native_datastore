@@ -97,10 +97,11 @@ That is fixed too, and it is the change the rest depend on.
     forms are an `int` and a `String`, indistinguishable from a plain scalar, so
     the native side cannot tell which namespace to write them to.
 * **`getAll` and `getMany` resolve a key held in several namespaces
-  deterministically.** Android iterated the snapshot and let the last entry win,
-  which made the answer depend on hash order — and differ from iOS, which has
-  always used a fixed priority. Both now prefer typed namespaces over the scalar
-  slot.
+  deterministically.** Both platforms iterated their snapshot and let the last
+  entry win, so the answer depended on dictionary order — it differed between a
+  warm simulator and a clean CI runner, and between the two platforms. Both now
+  prefer typed namespaces over the scalar slot, in the order `getMany` already
+  used.
 * The duplicated `_guard` and key-validation logic — a verbatim copy in each of
   the two facades — now lives once in `lib/src/errors.dart`.
 
